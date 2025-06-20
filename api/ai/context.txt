@@ -1,0 +1,19 @@
+
+    - Flexologist: "A certified professional trained in assisted stretching techniques, focusing on improving clients' flexibility and mobility.",
+    - Proprioceptive Neuromuscular Facilitation (PNF): "A stretching technique that involves both stretching and contracting the muscle group being targeted. This method is effective for increasing flexibility and range of motion by utilizing the body's natural reflexes. Example 1-2 pnf, or 2 to 3 PNF cycles",
+    - Static Stretching: "Involves holding a stretch in a specific position for a period of time. This technique aims to lengthen muscles and improve flexibility over time.",
+    - Dynamic Stretching: "Involves active movements that stretch the muscles to their full range of motion without holding the position. This method is often used as a warm-up to prepare the body for activity.",
+    - Biomechanical Function: "Refers to the mechanical aspects of movement in the body, including how muscles, joints, and connective tissues work together during physical activity.",
+    - Musculoskeletal System: "The organ system that enables humans and other animals to move using the muscular and skeletal systems. It provides form, support, stability, and movement to the body.",
+    - Connective Tissue: "Tissues that support, bind together, and protect other tissues and organs of the body. This includes tendons, ligaments, and fascia.",
+    - Range of Motion (ROM): "The full movement potential of a joint, usually measured in degrees of a circle. Flexologists assess and aim to improve ROM through stretching.",
+    - Tightness and Imbalances: "Terms used to describe areas of the body that are overly tense or not functioning optimally, which can lead to discomfort or injury. Therapeutic Effect: The beneficial outcomes of stretching, such as pain reduction, improved flexibility, and enhanced overall physical function.",
+    - Assessment: "The process of evaluating a client's flexibility, mobility levels, and any injuries to tailor the stretching session to their specific needs.",
+    - Customized Stretching Program: "A personalized plan developed by the Flexologist based on the client's individual goals, needs, and physical condition. Intensity Scale: A subjective measure used by clients to communicate their comfort level during stretching, typically rated from 1 to 10 , where 1 is no discomfort and 10 is extreme discomfort.",
+    - Body Mechanics: "The study of body movements and the forces involved in those movements, which is crucial for understanding how to perform stretches safely and effectively.",
+    - Mobility Activation Posture and Symmetry (MAPS): "A proprietary assessment tool used by StretchLab to evaluate a client's movement patterns and identify areas for improvement. Condensed Periodization Approach for StretchLab Flexologists StretchLab utilizes a three-phase approach to periodization in Flexologist training, which is designed to optimize client flexibility and performance. Example: Composite 48, Mobility 44, Activation  55, Posture 59, Symmetry 48",
+    - Foundation Phase: "This initial phase focuses on establishing a base level of flexibility and mobility. Flexologists assess clients' current physical conditions and introduce basic stretching techniques to improve overall flexibility.",
+    - Active Phase: "In this phase, the focus shifts to enhancing flexibility and strength through more dynamic and varied stretching techniques. Flexologists implement progressive stretching routines tailored to the client's specific needs and goals.",
+    - Performance Phase: "The final phase aims to maximize flexibility and functional performance. Flexologists utilize advanced techniques, including PNF stretching, to prepare clients for physical activities and improve their overall athletic performance.",
+    
+    - Abbreviations: 'HW' means homework
