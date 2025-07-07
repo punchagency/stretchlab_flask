@@ -80,7 +80,7 @@ def scrutinize_notes(notes, active):
     if active == "YES":
         extra = ""
     else:
-        extra = "6. Membership Recommendation: Recommends whether the client should continue, upgrade, or adjust their membership based on their progress, needs, or goals."
+        extra = "5. Membership Recommendation: Recommends whether the client should continue, upgrade, or adjust their membership based on their progress, needs, or goals."
 
     prompt = """
     - This is the context:
@@ -91,18 +91,17 @@ def scrutinize_notes(notes, active):
 
     Analyze the provided notes to determine if they meet the requirements for a high-quality note, as outlined below. Follow these steps for each requirement to ensure no details are missed:
 
-    1. **Verify Presence**: Check if the information is explicitly stated (e.g., "completed MAPS assessment"), implicitly provided (e.g., 'knots' as tightness, 'stress' as a reason for tension), or completely absent. Use the provided context to interpret abbreviations (e.g., 'PNF' as Proprioceptive Neuromuscular Facilitation, 'HF' as hip flexors, 'hammies' as hamstrings, 'HW' as homework) and terms (e.g., 'tight spots' as imbalances).
+    1. **Verify Presence**: Check if the information is explicitly stated (e.g., "2-3 PNF on shoulders"), implicitly provided (e.g., 'knots' as tightness, 'stress' as a reason for tension), or completely absent. Use the provided context to interpret abbreviations (e.g., 'PNF' as Proprioceptive Neuromuscular Facilitation, 'HF' as hip flexors, 'hammies' as hamstrings, 'HW' as homework) and terms (e.g., 'tight spots' as imbalances).
     2. **Assess Sufficiency**: Consider partial or implicit information sufficient unless the requirement explicitly demands a clear statement (e.g., a reason for no homework). For homework, if no tasks or reason for not assigning them is mentioned, treat it as missing.
-    3. **Generate Questions**: Create a concise, non-redundant question only for requirements that are completely missing or unclear. Avoid questions for requirements with partial or implicit information (e.g., a list of muscle groups for the next session).
+    3. **Generate Questions**: Create a concise, non-redundant question only for requirements that are completely missing or unclear. Avoid questions for requirements with partial or implicit information (e.g., a list of muscle groups for the next session). Do not ask any Question regarding MAPS
 
     Return a JSON object with a single field, "questions", containing a list of questions (strings). If all requirements are met, return an empty list ([]). Thoroughly review the context and notes before generating questions to ensure accurate interpretation of all details.
 
     - Requirements for a Quality Note:
-    1. MAPS Assessment: Confirms that the Mobility, Activation, Posture, and Symmetry (MAPS) assessment was done or reviewed, or explicitly notes an exemption (e.g., due to injury, disability, or client condition).
-    2. Actions Taken: Describes the stretching techniques (e.g., PNF, static, dynamic), muscle groups targeted, or exercises performed, including any details like duration, cycles, or range of motion (ROM).
-    3. Purpose: States or implies the goals or reasons for the actions, such as reducing tightness, improving flexibility, addressing imbalances, or managing pain/stress, as defined in the context.
-    4. Next Session Plan: Lists specific muscle groups, techniques, or periodization phase (e.g., Foundation, Active, Performance) planned for the next session.
-    5. Homework: Specifies any stretching or mobility tasks assigned to the client, or provides a clear reason why no homework was assigned (e.g., lack of time, client preference). If neither tasks nor a reason is mentioned, consider this requirement unmet.
+    1. Actions Taken: Describes the stretching techniques (e.g., PNF, static, dynamic), muscle groups targeted, or exercises performed, including any details like duration, cycles, or range of motion (ROM).
+    2. Purpose: States or implies the goals or reasons for the actions, such as reducing tightness, improving flexibility, addressing imbalances, or managing pain/stress, as defined in the context.
+    3. Next Session Plan: Lists specific muscle groups, techniques, or periodization phase (e.g., Foundation, Active, Performance) planned for the next session.
+    4. Homework: Specifies any stretching or mobility tasks assigned to the client, or provides a clear reason why no homework was assigned (e.g., lack of time, client preference). If neither tasks nor a reason is mentioned, consider this requirement unmet.
     {extra}
 
 
@@ -113,7 +112,8 @@ def scrutinize_notes(notes, active):
     for attempt in range(max_retries):
         try:
             response = client.chat.completions.create(
-                model="ft:gpt-4o-mini-2024-07-18:studio-hr::BcAAhLK9",
+                # model="ft:gpt-4o-mini-2024-07-18:studio-hr::BmdJ6YQJ",
+                model="ft:gpt-4o-mini-2024-07-18:studio-hr::BmhbGA6R",
                 messages=[
                     {
                         "role": "system",
@@ -165,9 +165,9 @@ def format_notes(notes):
      Organize StretchLab Flexologist session notes into a structured and concise format following the SOAP note style commonly used in physical therapy. Focus on detailing what actions were taken during the session, why they were performed, and future plans. Ensure to exclude any 'Meeting Summary' details such as client name, Flexologist, or location. Highlight any missing information and provide suggestions for improvement in note-taking, if necessary.
       # Steps:
       1. What was done in the session:
-         - Identify the current phase of periodization (e.g., month/week).
+         - Identify the phase of periodization. Foundation phase is 1, Active phase is 2, Performance phase is 3
          - Describe the work being done within that phase, including variables and focus areas.
-         - Provide MAPS scan results with interpretation related to goals and the current phase of periodization.
+         - Class is the session number or the class number.
       2. Why the actions were performed:
          - Explain the reasoning behind the techniques used, such as addressing muscle guarding or enhancing tissue tolerance.
       3. Future plans:
@@ -179,17 +179,19 @@ def format_notes(notes):
       5. Suggestions for Improvement:
          - Offer brief suggestions to enhance the quality of note-taking by the Flexologist.
       # Output Format:
-        Return a JSON object with a single field, "notes", which is an array containing the formatted note objects i.e Current phase, Focus, MAPS, Next session, Homework, Considerations, Missing Information, and Suggestions. if any of the fields are missing, return "N/A" for that field. 
+        Return a JSON object with a single field, "notes", which is an array containing the formatted note objects i.e Class (if mentioned), Phase (if mentioned), Today, Next, PNF (if mentioned), Homework (if mentioned), Recommendation (if mentioned), Considerations, Missing Information and Suggestions
 
       # here is an example of a formatted note. Strictly adhere to the format provided:
-        **Next session**: Focus on shoulders, hip, and abductor regions to address tightness identified in this session.
-        **Current phase**: Active phase
-        **MAPS**: Composite 48, Mobility 44, Activation 55, Posture 59, Symmetry 48. Indicates moderate mobility limitations, especially in shoulders and hip region, correlating with client's goals of increasing flexibility and mobility due to prolonged sitting.
-        **Focus**: Full body flexibility and mobility improvement 
-        **Homework**: Assigned shoulder and doorway stretches. Recommend practicing these daily to enhance shoulder mobility and alleviate tightness. Consider suggesting specific resources or videos for guidance.
-        **Considerations**: Ayesha's long hours at the computer may contribute to her shoulder tension; discussing ergonomic adjustments or breaks during work hours could be beneficial in future sessions.
-        **Excluded**:
-        -
+        **Class**: 23 or Session #26 [if class is not mentioned, do not include it in JSON output]
+        **Phase**: 2 [if phase is not mentioned, do not include it in JSON output]
+        **Today**: Full body flexibility and mobility improvement 
+        **Next**: Focus on shoulders, hip, and abductor regions to address tightness identified in this session.
+        **PNF**: 2-3 PNF or PNF 2-3
+        **Homework**: Assigned shoulder and doorway stretches. Recommend practicing these daily to enhance shoulder mobility and alleviate tightness. Consider suggesting specific resources or videos for guidance. [if homework is not mentioned, do not include it in JSON output]
+        **Recommendation**: 4x50 or 4x25 minutes, or some sort of recommendation [if not provided, do not include it in JSON output]
+        **Considerations**: Ayesha's long hours at the computer may contribute to her shoulder tension; discussing ergonomic adjustments or breaks during work hours could be beneficial in future sessions.[if not provided, do not include it in JSON output]
+        **Missing Information**:The Class, Phase, what was done in the session and next plan were not mentioned
+        
         **Suggested Improvement**:
         Consider providing more detailed observations of each stretch's effectiveness and any specific feedback from the client regarding comfort or difficulty.
     

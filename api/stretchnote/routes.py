@@ -35,7 +35,7 @@ def get_bookings(token):
             .execute()
         )
         if len(check_today_booking.data) > 0 and reset != "true":
-            bookings = json.loads(check_today_booking.data[0]["bookings"])
+            bookings = check_today_booking.data
         else:
             user = (
                 supabase.table("users")
@@ -48,31 +48,47 @@ def get_bookings(token):
                 "Password": user.data[0]["clubready_password"],
             }
             bookings = asyncio.run(get_user_bookings_from_clubready(user_details))
-
             if bookings["status"]:
-                if (
+                check_today_booking = (
                     supabase.table("clubready_bookings")
                     .select("*")
                     .eq("user_id", user_data["user_id"])
+                    .eq("created_at", datetime.now().strftime("%Y-%m-%d"))
                     .execute()
-                    .data
-                ):
-                    supabase.table("clubready_bookings").update(
-                        {
-                            "bookings": json.dumps(bookings["bookings"]),
-                            "created_at": datetime.now().strftime("%Y-%m-%d"),
-                        }
-                    ).eq("user_id", user_data["user_id"]).execute()
-                else:
+                )
+                if len(check_today_booking.data) > 0:
+                    supabase.table("clubready_bookings").delete().eq(
+                        "user_id", user_data["user_id"]
+                    ).eq("created_at", datetime.now().strftime("%Y-%m-%d")).execute()
+                for booking in bookings["bookings"]:
                     supabase.table("clubready_bookings").insert(
                         {
                             "user_id": user_data["user_id"],
-                            "bookings": json.dumps(bookings["bookings"]),
+                            "client_name": booking["client_name"],
+                            "booking_id": booking["booking_id"],
+                            "workout_type": booking["workout_type"],
+                            "first_timer": booking["first_timer"],
+                            "active_member": booking["active"],
+                            "location": booking["location"],
+                            "phone_number": booking["phone"],
+                            "booking_time": booking["booking_time"],
+                            "period": booking["event_date"],
+                            "past_booking": booking["past"],
+                            "flexologist_name": booking["flexologist_name"],
+                            "submitted": False,
+                            "submitted_notes": None,
                             "created_at": datetime.now().strftime("%Y-%m-%d"),
                         }
                     ).execute()
 
-                bookings = bookings["bookings"]
+                check_bookings = (
+                    supabase.table("clubready_bookings")
+                    .select("*")
+                    .eq("user_id", user_data["user_id"])
+                    .eq("created_at", datetime.now().strftime("%Y-%m-%d"))
+                    .execute()
+                )
+                bookings = check_bookings.data
             else:
                 return (
                     jsonify(
@@ -92,7 +108,7 @@ def get_bookings(token):
         return jsonify(response), 200
 
     except Exception as e:
-        logging.error(f"Error in GET /api/stretchnote/get_bookings: {str(e)}")
+        logging.error(f"Error in GET /api/resource: {str(e)}")
         return jsonify({"error": "Internal server error", "status": "error"}), 500
 
 
@@ -111,7 +127,6 @@ def add_notes(token):
             "booking_id": data["bookingId"],
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
-
         create_note = supabase.table("booking_notes").insert(note_data).execute()
         if create_note.data:
             return (
@@ -127,7 +142,7 @@ def add_notes(token):
         logging.warning(f"Validation error in POST /api/resource: {str(ve)}")
         return jsonify({"error": str(ve), "status": "error"}), 400
     except Exception as e:
-        logging.error(f"Error in POST /api/stretchnote/add_notes: {str(e)}")
+        logging.error(f"Error in POST /api/resource: {str(e)}")
         return jsonify({"error": "Internal server error", "status": "error"}), 500
 
 
@@ -144,6 +159,7 @@ def get_notes(token, booking_id):
             .execute()
         )
         if notes.data:
+            logging.info(f"Notes fetched successfully for user {user_data['email']}")
             return jsonify({"notes": notes.data, "status": "success"}), 200
         else:
             return jsonify({"message": "No notes found", "status": "error"}), 404
@@ -168,22 +184,23 @@ def get_questions(token, booking_id):
             supabase.table("clubready_bookings")
             .select("*")
             .eq("user_id", user_data["user_id"])
+            .eq("booking_id", booking_id)
             .execute()
         )
-
-        if get_booking.data:
-            for booking in json.loads(get_booking.data[0]["bookings"]):
-                if booking["booking_id"] == booking_id:
-                    active = booking["active"]
-                    break
-        else:
+        if not get_booking.data:
             return jsonify({"message": "Booking not found", "status": "error"}), 404
+
+        active = get_booking.data[0]["active_member"]
         questions = scrutinize_notes(notes, active)
         formatted_notes = format_notes(notes)
 
         note_data = {
             "flexologist_uid": user_data["user_id"],
-            "note": json.dumps(questions["questions"]),
+            "note": json.dumps(
+                questions["questions"]
+                if "no questions" not in questions["questions"]
+                else []
+            ),
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "voice": "assistant",
             "type": "assistant",
@@ -196,7 +213,11 @@ def get_questions(token, booking_id):
             return (
                 jsonify(
                     {
-                        "questions": questions,
+                        "questions": (
+                            questions
+                            if "no questions" not in questions["questions"]
+                            else {"questions": []}
+                        ),
                         "formatted_notes": formatted_notes,
                         "status": "success",
                     }
@@ -209,7 +230,7 @@ def get_questions(token, booking_id):
                 400,
             )
     except Exception as e:
-        logging.error(f"Error in POST /api/stretchnote/get_questions: {str(e)}")
+        logging.error(f"Error in POST /api/resource: {str(e)}")
         return jsonify({"error": "Internal server error", "status": "error"}), 500
 
 
@@ -221,8 +242,9 @@ def submit_notes_route(token):
         data = request.get_json()
         period = data["period"]
         notes = data["notes"]
+        coaching = data["coaching"]
+        client_name = data["client_name"]
         location = data["location"]
-
         user_details = (
             supabase.table("users").select("*").eq("id", user_data["user_id"]).execute()
         )
@@ -233,8 +255,19 @@ def submit_notes_route(token):
             period,
             notes,
             location,
+            client_name,
         )
         if result["status"]:
+            supabase.table("clubready_bookings").update(
+                {
+                    "submitted": True,
+                    "submitted_notes": notes,
+                    "coaching_notes": coaching,
+                    "submitted_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                }
+            ).eq("client_name", client_name).eq(
+                "created_at", datetime.now().strftime("%Y-%m-%d")
+            ).execute()
             return (
                 jsonify({"message": result["message"], "status": "success"}),
                 200,
@@ -245,7 +278,7 @@ def submit_notes_route(token):
                 400,
             )
     except Exception as e:
-        logging.error(f"Error in POST /api/stretchnote/submit_notes: {str(e)}")
+        logging.error(f"Error in POST /api/resource: {str(e)}")
         return jsonify({"error": "Internal server error", "status": "error"}), 500
 
 

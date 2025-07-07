@@ -88,7 +88,7 @@ def login():
                     SECRET_KEY,
                     algorithm="HS256",
                 )
-                logging.info(f"User {data['email']} logged in successfully")
+                logging.info(f"User {data['email']} logged in successfully - admin")
                 return (
                     jsonify(
                         {
@@ -111,14 +111,14 @@ def login():
                     200,
                 )
             else:
-                logging.info(f"User {data['email']} failed to login")
+                logging.info(f"User {data['email']} failed to login - admin")
                 return (
                     jsonify({"message": "Invalid credentials", "status": "error"}),
                     400,
                 )
 
         else:
-            logging.info(f"User {data['email']} does not exist")
+            logging.info(f"User {data['email']} does not exist - admin")
             return (
                 jsonify(
                     {
@@ -129,7 +129,7 @@ def login():
                 404,
             )
     except ValueError as ve:
-        logging.warning(f"Validation error in POST /auth/login: {str(ve)}")
+        logging.warning(f"Validation error in POST /admin/auth/login: {str(ve)}")
         return jsonify({"message": str(ve), "status": "error"}), 400
     except Exception as e:
         logging.error(f"Error in POST /admin/auth/login: {str(e)}")

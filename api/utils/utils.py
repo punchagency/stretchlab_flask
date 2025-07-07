@@ -313,13 +313,31 @@ async def fetch_bookings_for_location(page, base_url, location_text, semaphore):
                         )
                         else "NO"
                     )
-                    active = (
-                        "YES"
-                        if await modal_details.query_selector(
-                            ".client-membership-tags .container-active"
+                    if await modal_details.query_selector(
+                        ".client-membership-tags .container-active"
+                    ):
+                        active = "YES"
+                    else:
+                        lead_type_elem = await modal_details.query_selector(
+                            ".membership-info .lead-type"
                         )
-                        else "NO"
-                    )
+                        if (
+                            lead_type_elem
+                            and await lead_type_elem.inner_text() == "Employee"
+                        ):
+                            active = "YES"
+                        else:
+                            future_bookings_elem = await modal_details.query_selector(
+                                ".future-bookings .details-info"
+                            )
+                            if future_bookings_elem:
+                                try:
+                                    if int(await future_bookings_elem.inner_text()) > 0:
+                                        active = "YES"
+                                    else:
+                                        active = "NO"
+                                except ValueError:
+                                    active = "NO"
 
                     html = await modal_details.inner_html()
                     result = extract_booking_data_from_html(html)
@@ -431,13 +449,36 @@ async def get_user_bookings_from_clubready(user_details, max_concurrency=3):
                             )
                             else "NO"
                         )
-                        active = (
-                            "YES"
-                            if await modal_details.query_selector(
-                                ".client-membership-tags .container-active"
+                        if await modal_details.query_selector(
+                            ".client-membership-tags .container-active"
+                        ):
+                            active = "YES"
+                        else:
+                            lead_type_elem = await modal_details.query_selector(
+                                ".membership-info .lead-type"
                             )
-                            else "NO"
-                        )
+                            if (
+                                lead_type_elem
+                                and await lead_type_elem.inner_text() == "Employee"
+                            ):
+                                active = "YES"
+                            else:
+                                future_bookings_elem = (
+                                    await modal_details.query_selector(
+                                        ".future-bookings .details-info"
+                                    )
+                                )
+                                if future_bookings_elem:
+                                    try:
+                                        if (
+                                            int(await future_bookings_elem.inner_text())
+                                            > 0
+                                        ):
+                                            active = "YES"
+                                        else:
+                                            active = "NO"
+                                    except ValueError:
+                                        active = "NO"
 
                         html = await modal_details.inner_html()
                         result = extract_booking_data_from_html(html)
@@ -512,12 +553,13 @@ async def get_user_bookings_from_clubready(user_details, max_concurrency=3):
             await browser.close()
 
 
-def submit_notes(username, password, period, notes, location=None):
+def submit_notes(username, password, period, notes, location=None, client_name=None):
     password = reverse_hash_credentials(username, password)
     playwright = None
     browser = None
     context = None
     page = None
+    modal_details = None
 
     try:
         playwright = sync_playwright().start()
@@ -544,13 +586,7 @@ def submit_notes(username, password, period, notes, location=None):
             )
 
             page.click(".dropdown--item:has(input#only-me)")
-            container = page.query_selector_all(".sidebar-section-content")
-            all_div_selectors = []
-            for cont in container:
-                div_selector = cont.query_selector_all(
-                    "div[class*='sidebar-event-card']"
-                )
-                all_div_selectors.extend(div_selector)
+            container = page.query_selector(".sidebar-section-content")
             page.click("#dropdown-button")
             page.wait_for_selector(
                 ".sidebar-events-filter-menu",
@@ -558,174 +594,44 @@ def submit_notes(username, password, period, notes, location=None):
                 timeout=2000,
             )
             unpaid_modal = None
-
-            if len(all_div_selectors) > 0:
-                matching_booking = None
-                for div in all_div_selectors:
-                    event_date = div.query_selector(".event-date").inner_text()
-                    if event_date == period:
-                        matching_booking = div
-                        break
-
-                if matching_booking:
-                    matching_booking.click()
-                    modal_details = page.wait_for_selector(
-                        ".booking-panel", state="visible"
-                    )
-                    page.wait_for_function(
-                        """
-                                                (element) => {                                 
-                                                    const loaders = element.querySelectorAll('[class*="spinner"]');
-                                                    return element && element.offsetParent !== null && loaders.length === 0;
-                                                }
-                                                """,
-                        arg=modal_details,
-                        timeout=20000,
-                    )
-
-                    open_notes_btn = modal_details.query_selector(
-                        "button[id='make-note-footer']"
-                    )
-
-                    if open_notes_btn:
-                        open_notes_btn.click()
-
-                        note_modal = page.wait_for_selector(
-                            "div[class='desktop-modal add-note']",
-                            state="visible",
-                            timeout=10000,
-                        )
-                        if note_modal:
-                            subject_input = note_modal.query_selector(
-                                "input[id='subject']"
-                            )
-                            notes_textarea = note_modal.query_selector(
-                                "textarea[id='text']"
-                            )
-                            if subject_input and notes_textarea:
-                                note_modal.query_selector("#tag-0").click()
-                                subject_input.fill("Session Notes")
-                                notes_textarea.fill(notes)
-
-                                submit_btn = note_modal.query_selector(
-                                    "button[id='add-note-btn']"
-                                )
-                                if submit_btn:
-
-                                    submit_btn.click()
-                                    page.wait_for_selector(
-                                        ".spinner-background",
-                                        state="hidden",
-                                        timeout=40000,
-                                    )
-
-                            else:
-                                logging.error(
-                                    "Subject input or notes textarea not found"
-                                )
-                            close_btn = note_modal.query_selector(
-                                "div[class='desktop-modal-header-close']"
-                            )
-                            if close_btn:
-                                close_btn.click()
-
-                            modal_details.query_selector(
-                                "button[id='log-status-show']"
-                            ).click()
-
-                            try:
-                                unpaid_modal = page.wait_for_selector(
-                                    ".log-as-completed",
-                                    state="visible",
-                                    timeout=10000,
-                                )
-                                if unpaid_modal:
-                                    unpaid_modal.query_selector(
-                                        "button[id='log-and-go-to-pos-button']"
-                                    ).click()
-                                    page.wait_for_timeout(500)
-                                    unpaid_modal.query_selector(
-                                        ".desktop-modal-header-close"
-                                    ).click()
-                            except:
-                                page.wait_for_selector(
-                                    ".spinner-background",
-                                    state="hidden",
-                                    timeout=40000,
-                                )
-
-                else:
-                    logging.info("No matching booking found")
-
-                close_btn = modal_details.query_selector("#header-close")
-                if close_btn:
-                    close_btn.click()
-                    page.wait_for_selector(
-                        ".booking-panel",
-                        state="hidden",
-                    )
-                else:
-                    logging.error("Close button not found")
-            else:
-                logging.info("No bookings found")
-
-            return {
-                "status": True,
-                "message": (
-                    "Heads Up - Session was logged off, but unpaid.  Ask front desk team to process payment"
-                    if unpaid_modal
-                    else "Notes submitted successfully"
-                ),
-            }
-        else:
-            page.wait_for_selector("select[name='stores']")
-            select_element = page.query_selector("select[name='stores']")
-            options = select_element.query_selector_all("option")
-            option = None
-            for opt in options:
-                if opt.inner_text() == location:
-                    option = opt
-                    break
-            if option:
-                option.click()
-                page.click("input[name='Submit2']")
-                page.wait_for_load_state("networkidle", timeout=0)
-                page.goto("https://scheduling.clubready.com/day")
-                page.wait_for_load_state("networkidle", timeout=0)
-                page.wait_for_selector(
-                    ".spinner-background", state="hidden", timeout=40000
+            if container:
+                div_selector = container.query_selector_all(
+                    "div[class*='sidebar-event-card']"
                 )
+                if len(div_selector) > 0:
+                    print("Table with class starting with 'ids' found.")
+                    print(div_selector)
 
-                page.click("#dropdown-button")
-                page.wait_for_selector(
-                    ".sidebar-events-filter-menu",
-                    state="visible",
-                    timeout=2000,
-                )
-
-                page.click(".dropdown--item:has(input#only-me)")
-                container = page.query_selector_all(".sidebar-section-content")
-                all_div_selectors = []
-                for cont in container:
-                    div_selector = cont.query_selector_all(
-                        "div[class*='sidebar-event-card']"
-                    )
-                all_div_selectors.extend(div_selector)
-                page.click("#dropdown-button")
-                page.wait_for_selector(
-                    ".sidebar-events-filter-menu",
-                    state="hidden",
-                    timeout=2000,
-                )
-                unpaid_modal = None
-
-                if len(all_div_selectors) > 0:
                     matching_booking = None
-                    for div in all_div_selectors:
+                    same_client_booking = None
+                    matching_index = -1
+
+                    for i, div in enumerate(div_selector):
                         event_date = div.query_selector(".event-date").inner_text()
                         if event_date == period:
                             matching_booking = div
+                            matching_index = i
                             break
+
+                    if (
+                        matching_booking
+                        and matching_index >= 0
+                        and matching_index + 1 < len(div_selector)
+                    ):
+                        check_client = (
+                            div_selector[matching_index + 1]
+                            .query_selector(".event-customer")
+                            .inner_text()
+                        )
+                        if check_client == client_name:
+                            same_client_booking = div_selector[matching_index + 1]
+                            print(
+                                f"Found next booking for same client at index {matching_index + 1}"
+                            )
+                        else:
+                            print(
+                                f"Found next booking for different client at index {matching_index + 1}"
+                            )
 
                     if matching_booking:
                         matching_booking.click()
@@ -780,9 +686,7 @@ def submit_notes(username, password, period, notes, location=None):
                                         )
 
                                 else:
-                                    logging.error(
-                                        "Subject input or notes textarea not found"
-                                    )
+                                    print("Subject input or notes textarea not found")
                                 close_btn = note_modal.query_selector(
                                     "div[class='desktop-modal-header-close']"
                                 )
@@ -815,20 +719,319 @@ def submit_notes(username, password, period, notes, location=None):
                                     )
 
                     else:
-                        logging.info("No matching booking found")
+                        print("No matching booking found")
 
-                    close_btn = modal_details.query_selector("#header-close")
-                    if close_btn:
-                        close_btn.click()
-                        page.wait_for_selector(
-                            ".booking-panel",
-                            state="hidden",
+                    if modal_details:
+                        close_btn = modal_details.query_selector("#header-close")
+                        if close_btn:
+                            close_btn.click()
+                            page.wait_for_selector(
+                                ".booking-panel",
+                                state="hidden",
+                            )
+                            print("close button clicked")
+                        else:
+                            print("Close button not found")
+
+                    if same_client_booking:
+                        same_client_booking.click()
+                        modal_details = page.wait_for_selector(
+                            ".booking-panel", state="visible"
                         )
-                    else:
-                        logging.error("Close button not found")
-                else:
-                    logging.info("No bookings found")
+                        page.wait_for_function(
+                            """
+                                (element) => {                                 
+                                    const loaders = element.querySelectorAll('[class*="spinner"]');
+                                    return element && element.offsetParent !== null && loaders.length === 0;
+                                }
+                                """,
+                            arg=modal_details,
+                            timeout=20000,
+                        )
+                        modal_details.query_selector(
+                            "button[id='log-status-show']"
+                        ).click()
+                        try:
+                            unpaid_modal = page.wait_for_selector(
+                                ".log-as-completed",
+                                state="visible",
+                                timeout=10000,
+                            )
+                            if unpaid_modal:
+                                unpaid_modal.query_selector(
+                                    "button[id='log-and-go-to-pos-button']"
+                                ).click()
+                                page.wait_for_timeout(500)
+                                unpaid_modal.query_selector(
+                                    ".desktop-modal-header-close"
+                                ).click()
+                        except:
+                            page.wait_for_selector(
+                                ".spinner-background",
+                                state="hidden",
+                                timeout=40000,
+                            )
+                        close_btn = modal_details.query_selector("#header-close")
+                        if close_btn:
+                            close_btn.click()
+                            page.wait_for_selector(
+                                ".booking-panel",
+                                state="hidden",
+                            )
+                            print("close button clicked")
+                        else:
+                            print("Close button not found")
 
+                else:
+                    print("No bookings found")
+            else:
+                print("No container found")
+            # remove_notes(user_id, all_bookings)
+            return {
+                "status": True,
+                "message": (
+                    "Heads Up - Session was logged off, but unpaid.  Ask front desk team to process payment"
+                    if unpaid_modal
+                    else "Notes submitted successfully"
+                ),
+            }
+        else:
+            print(location, "location")
+            page.wait_for_selector("select[name='stores']")
+            select_element = page.query_selector("select[name='stores']")
+            options = select_element.query_selector_all("option")
+            option = None
+            for opt in options:
+                if opt.inner_text() == location:
+                    option = opt
+                    break
+            if option:
+                option.click()
+                page.click("input[name='Submit2']")
+                page.wait_for_load_state("networkidle", timeout=0)
+                page.goto("https://scheduling.clubready.com/day")
+                page.wait_for_load_state("networkidle", timeout=0)
+                page.wait_for_selector(
+                    ".spinner-background", state="hidden", timeout=40000
+                )
+
+                page.click("#dropdown-button")
+                page.wait_for_selector(
+                    ".sidebar-events-filter-menu",
+                    state="visible",
+                    timeout=2000,
+                )
+
+                page.click(".dropdown--item:has(input#only-me)")
+                container = page.query_selector(".sidebar-section-content")
+                page.click("#dropdown-button")
+                page.wait_for_selector(
+                    ".sidebar-events-filter-menu",
+                    state="hidden",
+                    timeout=2000,
+                )
+                unpaid_modal = None
+                if container:
+                    div_selector = container.query_selector_all(
+                        "div[class*='sidebar-event-card']"
+                    )
+                    if len(div_selector) > 0:
+                        print("Table with class starting with 'ids' found.")
+                        print(div_selector)
+
+                        # matching_booking = None
+                        # for div in div_selector:
+                        #     event_date = div.query_selector(".event-date").inner_text()
+                        #     if event_date == period:
+                        #         matching_booking = div
+                        #         break
+                        matching_booking = None
+                        same_client_booking = None
+                        matching_index = -1
+
+                        for i, div in enumerate(div_selector):
+                            event_date = div.query_selector(".event-date").inner_text()
+                            if event_date == period:
+                                matching_booking = div
+                                matching_index = i
+                                break
+
+                        if (
+                            matching_booking
+                            and matching_index >= 0
+                            and matching_index + 1 < len(div_selector)
+                        ):
+                            check_client = (
+                                div_selector[matching_index + 1]
+                                .query_selector(".event-customer")
+                                .inner_text()
+                            )
+                            if check_client == client_name:
+                                same_client_booking = div_selector[matching_index + 1]
+                                print(
+                                    f"Found next booking for same client at index {matching_index + 1}"
+                                )
+                            else:
+                                print(
+                                    f"Found next booking for different client at index {matching_index + 1}"
+                                )
+
+                        if matching_booking:
+                            matching_booking.click()
+                            modal_details = page.wait_for_selector(
+                                ".booking-panel", state="visible"
+                            )
+                            page.wait_for_function(
+                                """
+                                                        (element) => {                                 
+                                                            const loaders = element.querySelectorAll('[class*="spinner"]');
+                                                            return element && element.offsetParent !== null && loaders.length === 0;
+                                                        }
+                                                        """,
+                                arg=modal_details,
+                                timeout=20000,
+                            )
+
+                            open_notes_btn = modal_details.query_selector(
+                                "button[id='make-note-footer']"
+                            )
+
+                            if open_notes_btn:
+                                open_notes_btn.click()
+                                note_modal = page.wait_for_selector(
+                                    "div[class='desktop-modal add-note']",
+                                    state="visible",
+                                    timeout=10000,
+                                )
+                                if note_modal:
+                                    subject_input = note_modal.query_selector(
+                                        "input[id='subject']"
+                                    )
+                                    notes_textarea = note_modal.query_selector(
+                                        "textarea[id='text']"
+                                    )
+                                    if subject_input and notes_textarea:
+                                        note_modal.query_selector("#tag-0").click()
+                                        subject_input.fill("Session Notes")
+                                        notes_textarea.fill(notes)
+
+                                        submit_btn = note_modal.query_selector(
+                                            "button[id='add-note-btn']"
+                                        )
+                                        if submit_btn:
+
+                                            submit_btn.click()
+                                            page.wait_for_selector(
+                                                ".spinner-background",
+                                                state="hidden",
+                                                timeout=40000,
+                                            )
+
+                                    else:
+                                        print(
+                                            "Subject input or notes textarea not found"
+                                        )
+                                    close_btn = note_modal.query_selector(
+                                        "div[class='desktop-modal-header-close']"
+                                    )
+                                    if close_btn:
+                                        close_btn.click()
+
+                                        modal_details.query_selector(
+                                            "button[id='log-status-show']"
+                                        ).click()
+
+                                    try:
+                                        unpaid_modal = page.wait_for_selector(
+                                            ".log-as-completed",
+                                            state="visible",
+                                            timeout=10000,
+                                        )
+                                        if unpaid_modal:
+                                            print("Unpaid modal found")
+                                            unpaid_modal.query_selector(
+                                                "button[id='log-and-go-to-pos-button']"
+                                            ).click()
+                                            page.wait_for_timeout(500)
+                                            unpaid_modal.query_selector(
+                                                ".desktop-modal-header-close"
+                                            ).click()
+                                    except:
+                                        page.wait_for_selector(
+                                            ".spinner-background",
+                                            state="hidden",
+                                            timeout=40000,
+                                        )
+
+                        else:
+                            print("No matching booking found")
+
+                        if modal_details:
+                            close_btn = modal_details.query_selector("#header-close")
+                            if close_btn:
+                                close_btn.click()
+                                page.wait_for_selector(
+                                    ".booking-panel",
+                                    state="hidden",
+                                )
+                                print("close button clicked")
+                            else:
+                                print("Close button not found")
+
+                        if same_client_booking:
+                            same_client_booking.click()
+                            modal_details = page.wait_for_selector(
+                                ".booking-panel", state="visible"
+                            )
+                            page.wait_for_function(
+                                """
+                                (element) => {                                 
+                                    const loaders = element.querySelectorAll('[class*="spinner"]');
+                                    return element && element.offsetParent !== null && loaders.length === 0;
+                                }
+                                """,
+                                arg=modal_details,
+                                timeout=20000,
+                            )
+                            modal_details.query_selector(
+                                "button[id='log-status-show']"
+                            ).click()
+                            try:
+                                unpaid_modal = page.wait_for_selector(
+                                    ".log-as-completed",
+                                    state="visible",
+                                    timeout=10000,
+                                )
+                                if unpaid_modal:
+                                    unpaid_modal.query_selector(
+                                        "button[id='log-and-go-to-pos-button']"
+                                    ).click()
+                                    page.wait_for_timeout(500)
+                                    unpaid_modal.query_selector(
+                                        ".desktop-modal-header-close"
+                                    ).click()
+                            except:
+                                page.wait_for_selector(
+                                    ".spinner-background",
+                                    state="hidden",
+                                    timeout=40000,
+                                )
+                            close_btn = modal_details.query_selector("#header-close")
+                            if close_btn:
+                                close_btn.click()
+                                page.wait_for_selector(
+                                    ".booking-panel",
+                                    state="hidden",
+                                )
+                                print("close button clicked")
+                            else:
+                                print("Close button not found")
+                    else:
+                        print("No bookings found")
+                else:
+                    print("No container found")
+                # remove_notes(user_id, all_bookings)
+                print(unpaid_modal, "unpaid_modal")
                 return {
                     "status": True,
                     "message": (
@@ -839,7 +1042,7 @@ def submit_notes(username, password, period, notes, location=None):
                 }
 
     except Exception as e:
-        logging.error(f"An error occurred during submitting notes: {str(e)}")
+        print(f"An error occurred during submitting notes: {str(e)}")
         raise
     finally:
         if page:

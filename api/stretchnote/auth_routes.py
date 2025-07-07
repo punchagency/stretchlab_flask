@@ -153,7 +153,9 @@ def login():
                 supabase.table("users").update({"status": 4}).eq(
                     "id", user.data[0]["id"]
                 ).execute()
-
+            logging.info(
+                f"User {user.data[0]['email']} logged in successfully - flexologist"
+            )
             return (
                 jsonify(
                     {
