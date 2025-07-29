@@ -338,15 +338,46 @@ async def fetch_bookings_for_location(page, base_url, location_text, semaphore):
                                         active = "NO"
                                 except ValueError:
                                     active = "NO"
+                    client_name = await (
+                        await modal_details.query_selector("#client-name")
+                    ).inner_text()
+                    booking_number = await (
+                        await modal_details.query_selector(".details-tab .details-row")
+                    ).inner_text()
+                    booking_id = booking_number.lower().split("booking: #")[1].strip()
+                    workout_type = await (
+                        await modal_details.query_selector(".booking-title")
+                    ).inner_text()
+                    flexologist_name = await (
+                        await modal_details.query_selector(
+                            ".avatar-name-container .name-container .name"
+                        )
+                    ).inner_text()
+                    phone = await (
+                        await modal_details.query_selector(
+                            "#selected-phone-button .text"
+                        )
+                    ).inner_text()
+                    booking_time = await (
+                        await modal_details.query_selector(
+                            ".datetime-value .time-value"
+                        )
+                    ).inner_text()
 
-                    html = await modal_details.inner_html()
-                    result = extract_booking_data_from_html(html)
-                    print(f"Extracted booking data: {result}")
-                    result["event_date"] = event_date
-                    result["past"] = past
-                    result["first_timer"] = first_timer
-                    result["active"] = active
-                    result["location"] = location_text
+                    result = {
+                        "client_name": client_name,
+                        "booking_id": booking_id,
+                        "workout_type": workout_type,
+                        "flexologist_name": flexologist_name,
+                        "phone": phone,
+                        "booking_time": booking_time,
+                        "event_date": event_date,
+                        "past": past,
+                        "first_timer": first_timer,
+                        "active": active,
+                        "location": location_text,
+                    }
+
                     all_bookings.append(result)
 
                     close_btn = await modal_details.query_selector("#header-close")
@@ -480,13 +511,48 @@ async def get_user_bookings_from_clubready(user_details, max_concurrency=3):
                                     except ValueError:
                                         active = "NO"
 
-                        html = await modal_details.inner_html()
-                        result = extract_booking_data_from_html(html)
-                        print(f"Extracted booking data: {result}")
-                        result["event_date"] = event_date
-                        result["past"] = past
-                        result["first_timer"] = first_timer
-                        result["active"] = active
+                        client_name = await (
+                            await modal_details.query_selector("#client-name")
+                        ).inner_text()
+                        booking_number = await (
+                            await modal_details.query_selector(
+                                ".details-tab .details-row"
+                            )
+                        ).inner_text()
+                        booking_id = (
+                            booking_number.lower().split("booking: #")[1].strip()
+                        )
+                        workout_type = await (
+                            await modal_details.query_selector(".booking-title")
+                        ).inner_text()
+                        flexologist_name = await (
+                            await modal_details.query_selector(
+                                ".avatar-name-container .name-container .name"
+                            )
+                        ).inner_text()
+                        phone = await (
+                            await modal_details.query_selector(
+                                "#selected-phone-button .text"
+                            )
+                        ).inner_text()
+                        booking_time = await (
+                            await modal_details.query_selector(
+                                ".datetime-value .time-value"
+                            )
+                        ).inner_text()
+                        result = {
+                            "client_name": client_name,
+                            "booking_id": booking_id,
+                            "workout_type": workout_type,
+                            "flexologist_name": flexologist_name,
+                            "phone": phone,
+                            "booking_time": booking_time,
+                            "event_date": event_date,
+                            "past": past,
+                            "first_timer": first_timer,
+                            "active": active,
+                            "location": "All Locations",
+                        }
                         all_bookings.append(result)
 
                         close_btn = await modal_details.query_selector("#header-close")
@@ -560,6 +626,8 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
     context = None
     page = None
     modal_details = None
+    same_client_booking = None
+    same_client_period = None
 
     try:
         playwright = sync_playwright().start()
@@ -586,7 +654,7 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
             )
 
             page.click(".dropdown--item:has(input#only-me)")
-            container = page.query_selector(".sidebar-section-content")
+            container = page.query_selector(".sidebar-today-events")
             page.click("#dropdown-button")
             page.wait_for_selector(
                 ".sidebar-events-filter-menu",
@@ -603,7 +671,6 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
                     print(div_selector)
 
                     matching_booking = None
-                    same_client_booking = None
                     matching_index = -1
 
                     for i, div in enumerate(div_selector):
@@ -622,9 +689,13 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
                             div_selector[matching_index + 1]
                             .query_selector(".event-customer")
                             .inner_text()
+                            .lower()
                         )
                         if check_client == client_name:
                             same_client_booking = div_selector[matching_index + 1]
+                            same_client_period = same_client_booking.query_selector(
+                                ".event-date"
+                            ).inner_text()
                             print(
                                 f"Found next booking for same client at index {matching_index + 1}"
                             )
@@ -789,6 +860,7 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
             # remove_notes(user_id, all_bookings)
             return {
                 "status": True,
+                "same_client_period": same_client_period,
                 "message": (
                     "Heads Up - Session was logged off, but unpaid.  Ask front desk team to process payment"
                     if unpaid_modal
@@ -802,7 +874,7 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
             options = select_element.query_selector_all("option")
             option = None
             for opt in options:
-                if opt.inner_text() == location:
+                if opt.inner_text().lower() == location.lower():
                     option = opt
                     break
             if option:
@@ -823,7 +895,7 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
                 )
 
                 page.click(".dropdown--item:has(input#only-me)")
-                container = page.query_selector(".sidebar-section-content")
+                container = page.query_selector(".sidebar-today-events")
                 page.click("#dropdown-button")
                 page.wait_for_selector(
                     ".sidebar-events-filter-menu",
@@ -846,11 +918,11 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
                         #         matching_booking = div
                         #         break
                         matching_booking = None
-                        same_client_booking = None
+                        print(period, "period")
                         matching_index = -1
-
                         for i, div in enumerate(div_selector):
                             event_date = div.query_selector(".event-date").inner_text()
+                            print(event_date, "event_date")
                             if event_date == period:
                                 matching_booking = div
                                 matching_index = i
@@ -865,9 +937,13 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
                                 div_selector[matching_index + 1]
                                 .query_selector(".event-customer")
                                 .inner_text()
+                                .lower()
                             )
                             if check_client == client_name:
                                 same_client_booking = div_selector[matching_index + 1]
+                                same_client_period = same_client_booking.query_selector(
+                                    ".event-date"
+                                ).inner_text()
                                 print(
                                     f"Found next booking for same client at index {matching_index + 1}"
                                 )
@@ -964,7 +1040,10 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
                                         )
 
                         else:
-                            print("No matching booking found")
+                            return {
+                                "status": False,
+                                "message": "No matching booking found",
+                            }
 
                         if modal_details:
                             close_btn = modal_details.query_selector("#header-close")
@@ -974,7 +1053,6 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
                                     ".booking-panel",
                                     state="hidden",
                                 )
-                                print("close button clicked")
                             else:
                                 print("Close button not found")
 
@@ -1034,6 +1112,7 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
                 print(unpaid_modal, "unpaid_modal")
                 return {
                     "status": True,
+                    "same_client_period": same_client_period,
                     "message": (
                         "Heads Up - Session was logged off, but unpaid.  Ask front desk team to process payment"
                         if unpaid_modal

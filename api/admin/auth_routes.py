@@ -7,12 +7,20 @@ from ..utils.utils import (
     decode_jwt_token,
 )
 from ..utils.mail import send_email
+from ..utils.two_factor import (
+    verify_totp_code,
+    verify_backup_code,
+    remove_used_backup_code,
+)
 from ..database.database import remove_booking_created_at
 from ..utils.middleware import require_bearer_token
 import logging
 import jwt
 import os
 from datetime import datetime, timedelta
+from ..payment.stripe_utils import create_customer
+from ..notification import insert_notification
+import json
 
 
 routes = Blueprint("admin_auth", __name__)
@@ -39,16 +47,16 @@ def login():
                 "maxlength": 120,
             },
         }
+        print("loggin details", request.get_json())
         data = validate_request(request.get_json(), schema)
 
         user = (
             supabase.table("users")
             .select("*, roles(name)")
-            .eq("email", data["email"].lower())
+            .eq("email", data["email"])
             .execute()
         )
         if len(user.data) == 0:
-            logging.info(f"User {data['email']} does not exist")
             return (
                 jsonify(
                     {
@@ -59,7 +67,6 @@ def login():
                 404,
             )
         if user.data[0]["role_id"] == 3:
-            logging.info(f"User {data['email']} is not an admin")
             return (
                 jsonify(
                     {
@@ -76,6 +83,49 @@ def login():
         )
         if user.data:
             if verify_password(data["password"], user.data[0]["password"]):
+                if user.data[0]["two_factor_auth"]:
+                    verification_code = generate_verification_code()
+                    expiration_time = (
+                        datetime.now() + timedelta(minutes=5)
+                    ).isoformat()
+                    supabase.table("users").update(
+                        {
+                            "verification_code": verification_code,
+                            "verification_code_expires_at": expiration_time,
+                        }
+                    ).eq("id", user.data[0]["id"]).execute()
+                    status = send_email(
+                        "2FA Verification Code",
+                        [user.data[0]["email"]],
+                        f"Your 2FA verification code is {verification_code}",
+                    )
+                    return (
+                        jsonify(
+                            {
+                                "message": "2FA verification code sent successfully",
+                                "status": "success",
+                                "requires_2fa": True,
+                            }
+                        ),
+                        200,
+                    )
+
+                if user.data[0]["is_verified"] == False:
+                    verification_code = generate_verification_code()
+                    expiration_time = (
+                        datetime.now() + timedelta(minutes=5)
+                    ).isoformat()
+                    supabase.table("users").update(
+                        {
+                            "verification_code": verification_code,
+                            "verification_code_expires_at": expiration_time,
+                        }
+                    ).eq("id", user.data[0]["id"]).execute()
+                    status = send_email(
+                        "Verification Code",
+                        [user.data[0]["email"]],
+                        f"Your verification code is {verification_code} and it will expire in 5 minutes",
+                    )
 
                 token = jwt.encode(
                     {
@@ -88,22 +138,23 @@ def login():
                     SECRET_KEY,
                     algorithm="HS256",
                 )
-                logging.info(f"User {data['email']} logged in successfully - admin")
                 return (
                     jsonify(
                         {
                             "message": (
                                 "Logged in successfully"
                                 if user.data[0]["is_verified"]
-                                else "Please verify your email to proceed"
+                                else "Please verify your email to proceed, check your email for the verification code"
                             ),
                             "status": "success",
+                            "requires_2fa": False,
                             "user": {
                                 "id": user.data[0]["id"],
                                 "email": user.data[0]["email"],
                                 "username": user.data[0]["username"],
                                 "role_id": user.data[0]["role_id"],
                                 "is_verified": user.data[0]["is_verified"],
+                                "is_clubready_verified": user.data[0]["status"] != 5,
                             },
                             "token": token,
                         }
@@ -111,14 +162,12 @@ def login():
                     200,
                 )
             else:
-                logging.info(f"User {data['email']} failed to login - admin")
                 return (
                     jsonify({"message": "Invalid credentials", "status": "error"}),
                     400,
                 )
 
         else:
-            logging.info(f"User {data['email']} does not exist - admin")
             return (
                 jsonify(
                     {
@@ -129,10 +178,95 @@ def login():
                 404,
             )
     except ValueError as ve:
-        logging.warning(f"Validation error in POST /admin/auth/login: {str(ve)}")
+        logging.warning(f"Validation error in POST /auth/login: {str(ve)}")
         return jsonify({"message": str(ve), "status": "error"}), 400
     except Exception as e:
         logging.error(f"Error in POST /admin/auth/login: {str(e)}")
+        return jsonify({"message": "Internal server error", "status": "error"}), 500
+
+
+@routes.route("/verify-2fa-login", methods=["POST"])
+def verify_2fa_login():
+    try:
+        data = request.get_json()
+        code = data.get("code")
+        email = data.get("email")
+
+        user = (
+            supabase.table("users")
+            .select("*, roles(name)")
+            .eq("email", email)
+            .execute()
+        )
+
+        if not user.data:
+            return jsonify({"message": "User not found", "status": "error"}), 404
+
+        role_name = (
+            user.data[0]["roles"]["name"]
+            if user.data and user.data[0]["roles"]
+            else "Unknown"
+        )
+
+        if (
+            datetime.fromisoformat(user.data[0]["verification_code_expires_at"])
+            > datetime.now()
+        ):
+            if user.data[0]["verification_code"] == code:
+                supabase.table("users").update(
+                    {
+                        "verification_code": None,
+                        "verification_code_expires_at": None,
+                    }
+                ).eq("id", user.data[0]["id"]).execute()
+                token = jwt.encode(
+                    {
+                        "user_id": user.data[0].get("id"),
+                        "email": user.data[0]["email"],
+                        "role_id": user.data[0]["role_id"],
+                        "role_name": role_name,
+                        "username": user.data[0]["username"],
+                    },
+                    SECRET_KEY,
+                    algorithm="HS256",
+                )
+                return (
+                    jsonify(
+                        {
+                            "message": "Logged in successfully",
+                            "status": "success",
+                            "token": token,
+                            "user": {
+                                "id": user.data[0]["id"],
+                                "email": user.data[0]["email"],
+                                "username": user.data[0]["username"],
+                                "role_id": user.data[0]["role_id"],
+                                "is_verified": user.data[0]["is_verified"],
+                            },
+                        }
+                    ),
+                    200,
+                )
+            else:
+                return (
+                    jsonify(
+                        {"message": "Invalid verification code", "status": "error"}
+                    ),
+                    400,
+                )
+        else:
+            return (
+                jsonify(
+                    {
+                        "message": "Verification code expired, request a new one",
+                        "status": "error",
+                    }
+                ),
+                400,
+            )
+
+    except Exception as e:
+        logging.error(f"Error in POST /admin/auth/verify-2fa-login: {str(e)}")
         return jsonify({"message": "Internal server error", "status": "error"}), 500
 
 
@@ -170,7 +304,7 @@ def check_username():
 def forgot_password():
     try:
         data = request.get_json()
-        email = data.get("email").lower()
+        email = data.get("email")
         frontend_url = os.environ.get("ADMIN_FRONTEND_URL")
         user = supabase.table("users").select("*").eq("email", email).execute()
         if len(user.data) == 0:
@@ -188,7 +322,6 @@ def forgot_password():
             [email],
             f"Your password reset link is {frontend_url}/reset-password/{token}",
         )
-        logging.info(f"Password reset link sent successfully to {email}")
         return (
             jsonify(
                 {
@@ -228,7 +361,12 @@ def reset_password():
         )
         if len(updated_user.data) == 0:
             return jsonify({"message": "Password reset failed", "status": "error"}), 400
-        logging.info(f"Password reset successfully for {user_data['email']}")
+        insert_notification(
+            user_data["user_id"],
+            f"Your password was reset",
+            "others",
+        )
+
         return (
             jsonify({"message": "Password reset successfully", "status": "success"}),
             200,
@@ -270,10 +408,7 @@ def register():
         }
         data = validate_request(request.get_json(), schema)
         user_exists = (
-            supabase.table("users")
-            .select("*")
-            .eq("email", data["email"].lower())
-            .execute()
+            supabase.table("users").select("*").eq("email", data["email"]).execute()
         )
         if user_exists.data:
             return jsonify({"message": "User already exists", "status": "error"}), 400
@@ -282,20 +417,22 @@ def register():
             supabase.table("users")
             .insert(
                 {
-                    "email": data["email"].lower(),
+                    "email": data["email"],
                     "username": data["username"],
                     "password": hashed_password,
                     "role_id": data["role_id"],
-                    "status": 1,
+                    "status": 5,
                     "created_at": datetime.now().isoformat(),
                 }
             )
             .execute()
         )
+        customer = create_customer(data["email"], data["username"])
         supabase.table("businesses").insert(
             {
                 "username": data["username"],
                 "admin_id": user.data[0]["id"],
+                "customer_id": customer.id,
                 "created_at": datetime.now().isoformat(),
             }
         ).execute()
@@ -317,7 +454,7 @@ def register():
         user = (
             supabase.table("users")
             .select("*, roles(name)")
-            .eq("email", data["email"].lower())
+            .eq("email", data["email"])
             .execute()
         )
         role_name = (
@@ -336,7 +473,11 @@ def register():
             SECRET_KEY,
             algorithm="HS256",
         )
-        logging.info(f"User {data['email']} registered successfully")
+        insert_notification(
+            user.data[0]["id"],
+            f"Welcome to Stretchnote Admin!",
+            "others",
+        )
         return (
             jsonify(
                 {
@@ -348,6 +489,7 @@ def register():
                         "username": user.data[0]["username"],
                         "role_id": user.data[0]["role_id"],
                     },
+                    "verification_code": verification_code,
                     "token": token,
                 }
             ),
@@ -356,6 +498,43 @@ def register():
 
     except Exception as e:
         logging.error(f"Error in POST /admin/auth/register: {str(e)}")
+        return jsonify({"message": "Internal server error", "status": "error"}), 500
+
+
+@routes.route("/resend-2fa-verification-code", methods=["POST"])
+def resend_2fa_verification_code():
+    try:
+        data = request.get_json()
+        email = data.get("email")
+        user = supabase.table("users").select("*").eq("email", email).execute()
+        if not user.data:
+            return jsonify({"message": "User not found", "status": "error"}), 404
+        verification_code = generate_verification_code()
+        expiration_time = (datetime.now() + timedelta(minutes=5)).isoformat()
+        supabase.table("users").update(
+            {
+                "verification_code": verification_code,
+                "verification_code_expires_at": expiration_time,
+            }
+        ).eq("email", email).execute()
+        send_email(
+            "2FA Verification Code",
+            [email],
+            f"Your 2FA verification code is {verification_code}",
+        )
+        return (
+            jsonify(
+                {
+                    "message": "2FA verification code sent successfully",
+                    "status": "success",
+                }
+            ),
+            200,
+        )
+    except Exception as e:
+        logging.error(
+            f"Error in POST /admin/auth/resend-2fa-verification-code: {str(e)}"
+        )
         return jsonify({"message": "Internal server error", "status": "error"}), 500
 
 
@@ -378,7 +557,7 @@ def verify(token):
         user = (
             supabase.table("users")
             .select("*")
-            .eq("email", decoded_token["email"].lower())
+            .eq("email", decoded_token["email"])
             .execute()
         )
         if user.data:
@@ -393,14 +572,12 @@ def verify(token):
                             "verification_code": None,
                             "verification_code_expires_at": None,
                         }
-                    ).eq("email", decoded_token["email"].lower()).execute()
-                    logging.info(
-                        f"Email {decoded_token['email']} verified successfully"
-                    )
+                    ).eq("email", decoded_token["email"]).execute()
                     return (
                         jsonify(
                             {
                                 "message": "Email verified successfully",
+                                "is_clubready_verified": user.data[0]["status"] != 5,
                                 "status": "success",
                             }
                         ),
@@ -435,6 +612,7 @@ def verify(token):
 def resend_verification_code(token):
     try:
         decoded_token = decode_jwt_token(token)
+        login = request.args.get("login")
         if not decoded_token:
             return (
                 jsonify(
@@ -448,7 +626,7 @@ def resend_verification_code(token):
         user = (
             supabase.table("users")
             .select("*")
-            .eq("email", decoded_token["email"].lower())
+            .eq("email", decoded_token["email"])
             .execute()
         )
         if user.data:
@@ -459,19 +637,20 @@ def resend_verification_code(token):
                     "verification_code": verification_code,
                     "verification_code_expires_at": expiration_time,
                 }
-            ).eq("email", decoded_token["email"].lower()).execute()
+            ).eq("email", decoded_token["email"]).execute()
             send_email(
                 "Verification Code",
                 [user.data[0]["email"]],
                 f"Your verification code is {verification_code}",
             )
-            logging.info(
-                f"Verification code resent successfully to {user.data[0]['email']}"
-            )
             return (
                 jsonify(
                     {
-                        "message": "Verification code sent successfully",
+                        "message": (
+                            "2FA verification code sent successfully"
+                            if login
+                            else "Verification code sent successfully"
+                        ),
                         "status": "success",
                     }
                 ),

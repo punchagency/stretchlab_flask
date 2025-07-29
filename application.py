@@ -14,7 +14,7 @@ CORS(
                 "http://localhost:5173",
             ],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "allow_headers": ["Content-Type", "Authorization"],
+            "allow_headers": ["Content-Type", "Authorization", "X-Client-Timezone"],
         }
     },
     supports_credentials=True,

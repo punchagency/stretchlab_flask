@@ -12,12 +12,140 @@ from ..database.database import (
 )
 from ..ai.aianalysis import scrutinize_notes, format_notes
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 from ..utils.middleware import require_bearer_token
 import asyncio
+import threading
+import uuid
+import pytz
 
 routes = Blueprint("routes", __name__)
+
+
+def get_client_timezone():
+    """
+    Extract timezone from request headers or use default UTC
+    """
+    timezone_header = request.headers.get("X-Client-Timezone")
+    if timezone_header:
+        try:
+            pytz.timezone(timezone_header)
+            return timezone_header
+        except pytz.exceptions.UnknownTimeZoneError:
+            logging.warning(f"Invalid timezone in header: {timezone_header}")
+
+    if request.is_json:
+        data = request.get_json()
+        if data and "timezone" in data:
+            try:
+                pytz.timezone(data["timezone"])
+                return data["timezone"]
+            except pytz.exceptions.UnknownTimeZoneError:
+                logging.warning(f"Invalid timezone in body: {data['timezone']}")
+
+    return "UTC"
+
+
+def get_client_datetime():
+    """
+    Get current datetime in client's timezone or UTC as fallback
+    """
+    client_tz = get_client_timezone()
+    tz = pytz.timezone(client_tz)
+    return datetime.now(tz)
+
+
+def background_submit_notes(
+    task_id,
+    clubready_username,
+    clubready_password,
+    period,
+    notes,
+    location,
+    client_name,
+    coaching,
+    client_date,
+    client_tz,
+):
+    def local_get_client_datetime():
+        tz = pytz.timezone(client_tz)
+        return datetime.now(tz)
+
+    try:
+        supabase.table("clubready_bookings").update(
+            {
+                "task_status": "submitting",
+                "task_message": "Notes submission running",
+                "task_id": task_id,
+                "submitted_notes": notes,
+                "coaching_notes": coaching,
+            }
+        ).eq("client_name", client_name).eq("period", period).eq(
+            "created_at", client_date
+        ).execute()
+        result = submit_notes(
+            clubready_username, clubready_password, period, notes, location, client_name
+        )
+
+        if result["status"]:
+            supabase.table("clubready_bookings").update(
+                {
+                    "submitted": True,
+                    "submitted_at": local_get_client_datetime().strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    ),
+                    "task_status": "success",
+                    "task_message": result["message"],
+                    "task_id": task_id,
+                    "task_error": None,
+                }
+            ).eq("client_name", client_name).eq("period", period).eq(
+                "created_at", client_date
+            ).execute()
+            if result["same_client_period"]:
+                supabase.table("clubready_bookings").update(
+                    {
+                        "submitted": True,
+                        "submitted_at": local_get_client_datetime().strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        ),
+                        "submitted_notes": notes,
+                        "coaching_notes": coaching,
+                        "task_status": "success",
+                        "task_message": result["message"],
+                        "task_id": task_id,
+                        "task_error": None,
+                    }
+                ).eq("client_name", client_name).eq(
+                    "period", result["same_client_period"]
+                ).eq(
+                    "created_at", client_date
+                ).execute()
+        else:
+            supabase.table("clubready_bookings").update(
+                {
+                    "task_status": "error",
+                    "task_message": "Notes submission failed",
+                    "task_id": task_id,
+                    "submitted": False,
+                    "submitted_notes": notes,
+                    "coaching_notes": coaching,
+                    "task_error": "No matching booking found",
+                }
+            ).eq("client_name", client_name).eq("period", period).eq(
+                "created_at", client_date
+            ).execute()
+    except Exception as e:
+        logging.error(f"Background task {task_id} failed: {str(e)}")
+        supabase.table("clubready_bookings").update(
+            {
+                "task_status": "error",
+                "task_message": "Submission failed",
+                "task_id": task_id,
+                "task_error": str(e),
+            }
+        ).eq("client_name", client_name).eq("created_at", client_date).execute()
 
 
 @routes.route("/get_bookings", methods=["GET"])
@@ -27,11 +155,14 @@ def get_bookings(token):
         reset = request.args.get("reset")
         user_data = decode_jwt_token(token)
 
+        client_datetime = get_client_datetime()
+        client_date = client_datetime.strftime("%Y-%m-%d")
+
         check_today_booking = (
             supabase.table("clubready_bookings")
             .select("*")
             .eq("user_id", user_data["user_id"])
-            .eq("created_at", datetime.now().strftime("%Y-%m-%d"))
+            .eq("created_at", client_date)
             .execute()
         )
         if len(check_today_booking.data) > 0 and reset != "true":
@@ -53,39 +184,54 @@ def get_bookings(token):
                     supabase.table("clubready_bookings")
                     .select("*")
                     .eq("user_id", user_data["user_id"])
-                    .eq("created_at", datetime.now().strftime("%Y-%m-%d"))
+                    .eq("created_at", client_date)
                     .execute()
                 )
                 if len(check_today_booking.data) > 0:
-                    supabase.table("clubready_bookings").delete().eq(
-                        "user_id", user_data["user_id"]
-                    ).eq("created_at", datetime.now().strftime("%Y-%m-%d")).execute()
+                    for booking in check_today_booking.data:
+                        if booking["submitted_notes"] is None:
+                            supabase.table("clubready_bookings").delete().eq(
+                                "id", booking["id"]
+                            ).execute()
+
+                existing_submitted_bookings = set()
+                for today_booking in check_today_booking.data:
+                    if today_booking["submitted_notes"] is not None:
+                        existing_submitted_bookings.add(today_booking["booking_id"])
+
+                def parse_time(t):
+                    return datetime.strptime(t, "%I:%M %p").time()
+
+                bookings["bookings"].sort(key=lambda b: parse_time(b["booking_time"]))
+
                 for booking in bookings["bookings"]:
-                    supabase.table("clubready_bookings").insert(
-                        {
-                            "user_id": user_data["user_id"],
-                            "client_name": booking["client_name"],
-                            "booking_id": booking["booking_id"],
-                            "workout_type": booking["workout_type"],
-                            "first_timer": booking["first_timer"],
-                            "active_member": booking["active"],
-                            "location": booking["location"],
-                            "phone_number": booking["phone"],
-                            "booking_time": booking["booking_time"],
-                            "period": booking["event_date"],
-                            "past_booking": booking["past"],
-                            "flexologist_name": booking["flexologist_name"],
-                            "submitted": False,
-                            "submitted_notes": None,
-                            "created_at": datetime.now().strftime("%Y-%m-%d"),
-                        }
-                    ).execute()
+                    if booking["booking_id"] not in existing_submitted_bookings:
+                        supabase.table("clubready_bookings").insert(
+                            {
+                                "user_id": user_data["user_id"],
+                                "client_name": booking["client_name"].lower(),
+                                "booking_id": booking["booking_id"],
+                                "workout_type": booking["workout_type"],
+                                "first_timer": booking["first_timer"],
+                                "active_member": booking["active"],
+                                "location": booking["location"].lower(),
+                                "phone_number": booking["phone"],
+                                "booking_time": booking["booking_time"],
+                                "period": booking["event_date"],
+                                "past_booking": booking["past"],
+                                "flexologist_name": booking["flexologist_name"].lower(),
+                                "submitted": False,
+                                "submitted_notes": None,
+                                "created_at": client_date,
+                            }
+                        ).execute()
 
                 check_bookings = (
                     supabase.table("clubready_bookings")
                     .select("*")
                     .eq("user_id", user_data["user_id"])
-                    .eq("created_at", datetime.now().strftime("%Y-%m-%d"))
+                    .eq("created_at", client_date)
+                    .order("id")
                     .execute()
                 )
                 bookings = check_bookings.data
@@ -121,11 +267,11 @@ def add_notes(token):
         note_data = {
             "flexologist_uid": user_data["user_id"],
             "note": data["note"],
-            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "time": get_client_datetime().strftime("%Y-%m-%d %H:%M:%S"),
             "voice": str(data["voice"]),
             "type": data["type"],
             "booking_id": data["bookingId"],
-            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "created_at": get_client_datetime().strftime("%Y-%m-%d %H:%M:%S"),
         }
         create_note = supabase.table("booking_notes").insert(note_data).execute()
         if create_note.data:
@@ -146,6 +292,52 @@ def add_notes(token):
         return jsonify({"error": "Internal server error", "status": "error"}), 500
 
 
+@routes.route("/get_client_history", methods=["POST"])
+@require_bearer_token
+def get_client_history(token):
+    try:
+        user_data = decode_jwt_token(token)
+        data = request.get_json()
+        client_name = data["client_name"]
+        client_history = (
+            supabase.table("clubready_bookings")
+            .select("*")
+            .eq("client_name", client_name)
+            .execute()
+        )
+        return (
+            jsonify({"client_history": client_history.data, "status": "success"}),
+            200,
+        )
+    except Exception as e:
+        logging.error(f"Error in POST /api/stretchnote/get_client_history: {str(e)}")
+        return jsonify({"error": "Internal server error", "status": "error"}), 500
+
+
+@routes.route("/get_flexologist_history", methods=["GET"])
+@require_bearer_token
+def get_flexologist_history(token):
+    try:
+        user_data = decode_jwt_token(token)
+        flexologist_history = (
+            supabase.table("clubready_bookings")
+            .select("*")
+            .eq("flexologist_uid", user_data["user_id"])
+            .execute()
+        )
+        return (
+            jsonify(
+                {"flexologist_history": flexologist_history.data, "status": "success"}
+            ),
+            200,
+        )
+    except Exception as e:
+        logging.error(
+            f"Error in GET /api/stretchnote/get_flexologist_history: {str(e)}"
+        )
+        return jsonify({"error": "Internal server error", "status": "error"}), 500
+
+
 @routes.route("/get_notes/<booking_id>", methods=["GET"])
 @require_bearer_token
 def get_notes(token, booking_id):
@@ -159,12 +351,11 @@ def get_notes(token, booking_id):
             .execute()
         )
         if notes.data:
-            logging.info(f"Notes fetched successfully for user {user_data['email']}")
             return jsonify({"notes": notes.data, "status": "success"}), 200
         else:
             return jsonify({"message": "No notes found", "status": "error"}), 404
     except Exception as e:
-        logging.error(f"Error in GET /api/stretchnote/get_notes: {str(e)}")
+        logging.error(f"Error in GET /api/resource: {str(e)}")
         return jsonify({"error": "Internal server error", "status": "error"}), 500
 
 
@@ -180,6 +371,7 @@ def get_questions(token, booking_id):
             .eq("type", "user")
             .execute()
         )
+        print(notes.data)
         get_booking = (
             supabase.table("clubready_bookings")
             .select("*")
@@ -201,12 +393,12 @@ def get_questions(token, booking_id):
                 if "no questions" not in questions["questions"]
                 else []
             ),
-            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "time": get_client_datetime().strftime("%Y-%m-%d %H:%M:%S"),
             "voice": "assistant",
             "type": "assistant",
             "booking_id": booking_id,
             "formatted_notes": json.dumps(formatted_notes),
-            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "created_at": get_client_datetime().strftime("%Y-%m-%d %H:%M:%S"),
         }
         create_note = supabase.table("booking_notes").insert(note_data).execute()
         if create_note.data:
@@ -245,40 +437,48 @@ def submit_notes_route(token):
         coaching = data["coaching"]
         client_name = data["client_name"]
         location = data["location"]
+        client_tz = get_client_timezone()
+        client_datetime = get_client_datetime()
+        client_date = client_datetime.strftime("%Y-%m-%d")
+
         user_details = (
             supabase.table("users").select("*").eq("id", user_data["user_id"]).execute()
         )
+        if not user_details.data:
+            return jsonify({"error": "User not found", "status": "error"}), 404
 
-        result = submit_notes(
-            user_details.data[0]["clubready_username"],
-            user_details.data[0]["clubready_password"],
-            period,
-            notes,
-            location,
-            client_name,
+        task_id = str(uuid.uuid4())
+
+        thread = threading.Thread(
+            target=background_submit_notes,
+            args=(
+                task_id,
+                user_details.data[0]["clubready_username"],
+                user_details.data[0]["clubready_password"],
+                period,
+                notes,
+                location,
+                client_name,
+                coaching,
+                client_date,
+                client_tz,
+            ),
         )
-        if result["status"]:
-            supabase.table("clubready_bookings").update(
+        thread.start()
+
+        return (
+            jsonify(
                 {
-                    "submitted": True,
-                    "submitted_notes": notes,
-                    "coaching_notes": coaching,
-                    "submitted_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "message": "Notes submitted successfully",
+                    "status": "success",
+                    "task_id": task_id,
                 }
-            ).eq("client_name", client_name).eq(
-                "created_at", datetime.now().strftime("%Y-%m-%d")
-            ).execute()
-            return (
-                jsonify({"message": result["message"], "status": "success"}),
-                200,
-            )
-        else:
-            return (
-                jsonify({"message": "Notes submission failed", "status": "error"}),
-                400,
-            )
+            ),
+            202,
+        )
+
     except Exception as e:
-        logging.error(f"Error in POST /api/resource: {str(e)}")
+        logging.error(f"Error in POST /submit_notes: {str(e)}")
         return jsonify({"error": "Internal server error", "status": "error"}), 500
 
 

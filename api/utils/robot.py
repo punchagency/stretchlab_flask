@@ -3,7 +3,6 @@ import pytz
 from datetime import datetime
 import json
 import uuid
-import logging
 
 events_client = boto3.client("events")
 s3_client = boto3.client("s3")
@@ -16,32 +15,33 @@ def create_s3_bucket(username, user_id, region="eu-north-1"):
         s3_client.create_bucket(
             Bucket=bucket_name, CreateBucketConfiguration={"LocationConstraint": region}
         )
-        logging.info(f"Created S3 bucket: {bucket_name} in region {region}")
+        print(f"Created S3 bucket: {bucket_name} in region {region}")
         return bucket_name
     except s3_client.exceptions.BucketAlreadyExists:
-        logging.info(
-            f"Bucket name {bucket_name} already exists. Generating a new name."
-        )
+        print(f"Bucket name {bucket_name} already exists. Generating a new name.")
         return create_s3_bucket(username, f"{user_id}-{str(uuid.uuid4())[:8]}", region)
+    except s3_client.exceptions.BucketAlreadyOwnedByYou:
+        print(f"Bucket name {bucket_name} already owned by you.")
+        return bucket_name
     except Exception as e:
-        logging.error(f"Error creating S3 bucket: {e}")
+        print(f"Error creating S3 bucket: {e}")
         raise
 
 
 def create_user_rule(
     username,
-    schedule_time,
-    time_zone,
     role_arn,
     bucket_name,
 ):
     try:
-        hour, minute = map(int, schedule_time.split(":"))
+        # hour, minute = map(int, schedule_time.split(":"))
 
-        utc_time = datetime(
-            2025, 1, 1, hour, minute, tzinfo=pytz.timezone(time_zone)
-        ).astimezone(pytz.UTC)
-        utc_hour, utc_minute = utc_time.hour, utc_time.minute
+        # utc_time = datetime(
+        #     2025, 1, 1, hour, minute, tzinfo=pytz.timezone(time_zone)
+        # ).astimezone(pytz.UTC)
+        # utc_hour, utc_minute = utc_time.hour, utc_time.minute
+        utc_hour = 7
+        utc_minute = 30
 
         cron_expression = f"cron({utc_minute} {utc_hour} * * ? *)"
         rule_name = f"rule-{username}"
@@ -67,24 +67,16 @@ def create_user_rule(
                 }
             ],
         )
-        logging.info(f"Created rule {rule_name} with ARN {rule_arn}")
+        print(f"Created rule {rule_name} with ARN {rule_arn}")
         return rule_arn
     except Exception as e:
-        logging.error(f"Error creating user rule for {username}: {e}")
+        print(f"Error creating user rule for {username}: {e}")
         raise
 
 
-def update_user_rule_schedule(username, schedule_time, time_zone, state="ENABLED"):
+def update_user_rule_schedule(username, state="ENABLED"):
     try:
-        hour, minute = map(int, schedule_time.split(":"))
-
-        if time_zone not in pytz.all_timezones:
-            raise ValueError(f"Invalid time zone: {time_zone}")
-
-        tz = pytz.timezone(time_zone)
-        local_time = tz.localize(datetime(2025, 1, 1, hour, minute))
-        utc_time = local_time.astimezone(pytz.UTC)
-        utc_hour, utc_minute = utc_time.hour, utc_time.minute
+        utc_hour, utc_minute = 7, 30
 
         cron_expression = f"cron({utc_minute} {utc_hour} * * ? *)"
 
@@ -94,11 +86,9 @@ def update_user_rule_schedule(username, schedule_time, time_zone, state="ENABLED
             State=state,
             Description=f"Daily rule for user {username} (updated)",
         )
-        logging.info(
-            f"Updated rule {response['RuleArn']} at {datetime.now().isoformat()}"
-        )
+        print(f"Updated rule {response['RuleArn']} at {datetime.now().isoformat()}")
         return response["RuleArn"]
 
     except Exception as e:
-        logging.error(f"Error updating rule for {username}: {e}")
+        print(f"Error updating rule for {username}: {e}")
         raise

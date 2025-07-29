@@ -13,13 +13,13 @@ from ..database.database import (
     get_owner_robot_automation_unlogged,
 )
 import logging
+from ..payment.stripe_utils import retrieve_payment_method, create_subscription
 from datetime import datetime
 from ..utils.robot import create_s3_bucket, create_user_rule, update_user_rule_schedule
-import os
+from ..notification import insert_notification
+import json
 
 routes = Blueprint("admin", __name__)
-
-ROLE_ARN = os.environ.get("ROLE_ARN")
 
 
 @routes.route("/invite-user", methods=["POST"])
@@ -28,8 +28,71 @@ def invite_user(token):
     try:
         user_data = decode_jwt_token(token)
         frontend_url = request.headers.get("Origin")
+        check_user_exists_and_is_admin = (
+            supabase.table("users")
+            .select("*, roles(name)")
+            .eq("id", user_data["user_id"])
+            .in_("role_id", [1, 2])
+            .execute()
+        )
+        if not check_user_exists_and_is_admin.data:
+            return (
+                jsonify({"message": "User is not an admin", "status": "error"}),
+                401,
+            )
+        check_subscription = (
+            supabase.table("businesses")
+            .select("payment_id,note_taking_subscription_id")
+            .eq("admin_id", user_data["user_id"])
+            .execute()
+        )
+        if (
+            not check_subscription.data[0]["payment_id"]
+            and check_user_exists_and_is_admin.data[0]["role_id"] != 1
+        ):
+            return (
+                jsonify(
+                    {
+                        "message": "payment details needed",
+                        "payment_id": False,
+                        "status": "warning",
+                    }
+                ),
+                402,
+            )
         data = request.get_json()
-        email = data.get("email").lower()
+
+        if (
+            not check_subscription.data[0]["note_taking_subscription_id"]
+            and not data["proceed"]
+            and check_user_exists_and_is_admin.data[0]["role_id"] != 1
+        ):
+            payment_method = retrieve_payment_method(
+                check_subscription.data[0]["payment_id"]
+            )
+            print(payment_method, "payment_method")
+            paymentinfo = {
+                "brand": payment_method.card.brand,
+                "last4": payment_method.card.last4,
+                "exp_month": payment_method.card.exp_month,
+                "exp_year": payment_method.card.exp_year,
+                "country": payment_method.card.country,
+                "name": payment_method.billing_details.name,
+                "email": payment_method.billing_details.email,
+            }
+            return (
+                jsonify(
+                    {
+                        "message": "note taking subscription needed",
+                        "payment_id": True,
+                        "payment_info": paymentinfo,
+                        "status": "warning",
+                    }
+                ),
+                402,
+            )
+
+        email = data.get("email")
         password, hashed_password = generate_random_password()
 
         check_user_non_flexologist = (
@@ -40,7 +103,6 @@ def invite_user(token):
             .execute()
         )
         if check_user_non_flexologist.data:
-            logging.info(f"Invited user {email} is not a flexologist")
             return (
                 jsonify({"message": "User is not a flexologist", "status": "warning"}),
                 409,
@@ -54,7 +116,6 @@ def invite_user(token):
             .execute()
         )
         if check_user_active.data:
-            logging.info(f"Invited user {email} is already active")
             return jsonify({"message": "User already active", "status": "warning"}), 409
 
         check_user_disabled = (
@@ -66,7 +127,6 @@ def invite_user(token):
             .execute()
         )
         if check_user_disabled.data:
-            logging.info(f"Invited user {email} is already disabled")
             return (
                 jsonify(
                     {
@@ -85,19 +145,13 @@ def invite_user(token):
             .execute()
         )
         if check_user_invited.data:
-            supabase.table("users").update(
-                {
-                    "password": hashed_password,
-                    "invited_at": datetime.now().isoformat(),
-                }
-            ).eq("email", email).execute()
             send_email(
                 "Invitation to Stretchnote Note taking app",
                 [email],
                 None,
                 f"<html><body><p>You have been invited to the <a href='https://www.stretchnote.com/login'>Stretchnote Note taking app</a>. These are your login credentials:</p><p>Email: {email}</p><p>Password: {password}</p> <p>Here is the link to the app: <a href='https://www.stretchnote.com/login'>Stretchnote Note taking app</a></p></body></html>",
             )
-            logging.info(f"User {email} was resent invitation")
+
             return (
                 jsonify(
                     {
@@ -122,7 +176,7 @@ def invite_user(token):
                 None,
                 f"<html><body><p>Please complete your registration by clicking the link below:</p><p><a href='https://www.stretchnote.com/login'>Complete Registration</a></p>body></html>",
             )
-            logging.info(f"User {email} was sent a nudging email")
+
             return (
                 jsonify(
                     {
@@ -136,7 +190,7 @@ def invite_user(token):
             supabase.table("users")
             .insert(
                 {
-                    "email": email,
+                    "email": email.lower(),
                     "status": 3,
                     "role_id": 3,
                     "username": user_data["username"],
@@ -147,6 +201,11 @@ def invite_user(token):
             )
             .execute()
         )
+        supabase.table("businesses").update(
+            {
+                "note_taking_active": True,
+            }
+        ).eq("admin_id", user_data["user_id"]).execute()
         new_user = new_user.data[0]
         if new_user:
             status = send_email(
@@ -156,7 +215,6 @@ def invite_user(token):
                 f"<html><body><p>You have been invited to the <a href='https://www.stretchnote.com/login'>Stretchnote Note taking app</a>. These are your login credentials:</p><p>Email: {email}</p><p>Password: {password}</p> <p>Here is the link to the app: <a href='https://www.stretchnote.com/login'>Stretchnote Note taking app</a></p></body></html>",
             )
             if status["success"]:
-                logging.info(f"New user {email} was invited successfully")
                 return (
                     jsonify(
                         {"message": "User invited successfully", "status": "success"}
@@ -164,7 +222,6 @@ def invite_user(token):
                     200,
                 )
             else:
-                logging.error(f"New user {email} invitation failed to send")
                 return (
                     jsonify(
                         {"message": "Invitation failed to send", "status": "error"}
@@ -187,8 +244,10 @@ def update_user_status(token):
         supabase.table("users").update({"status": status}).eq("email", email).eq(
             "admin_id", user_data["user_id"]
         ).execute()
-        logging.info(
-            f"User {email} access {status == 1 and 'granted' or 'revoked'} successfully"
+        insert_notification(
+            user_data["user_id"],
+            f"Your chnaged the status of {email} to {status == 1 and 'active' or 'disabled'}",
+            "note taking",
         )
         return (
             jsonify(
@@ -242,7 +301,6 @@ def get_users(token):
                 .execute()
             )
             employees = user.data
-        logging.info(f"Users fetched successfully by {user_data['username']}")
         return jsonify({"users": employees, "status": "success"}), 200
     except Exception as e:
         logging.error(f"Error in GET /admin/get-users: {str(e)}")
@@ -265,9 +323,6 @@ def validate_login(token):
                     "clubready_password": validate_login["hashed_password"],
                 }
             ).eq("id", user_data["user_id"]).execute()
-            logging.info(
-                f"User {data['username']} validated clubready login successfully"
-            )
             return (
                 jsonify(
                     {
@@ -279,7 +334,6 @@ def validate_login(token):
                 200,
             )
         else:
-            logging.error(f"User {data['username']} failed to validate clubready login")
             return (
                 jsonify(
                     {
@@ -302,7 +356,7 @@ def save_robot_config(token):
         user_data = decode_jwt_token(token)
         check_user_exists_and_is_admin = (
             supabase.table("users")
-            .select("*")
+            .select("*, roles(name)")
             .eq("id", user_data["user_id"])
             .in_("role_id", [1, 2])
             .execute()
@@ -312,24 +366,75 @@ def save_robot_config(token):
                 jsonify({"message": "User is not an admin", "status": "error"}),
                 401,
             )
+
+        check_subscription = (
+            supabase.table("businesses")
+            .select("payment_id,robot_process_automation_subscription_id, customer_id")
+            .eq("admin_id", user_data["user_id"])
+            .execute()
+        )
+        if (
+            not check_subscription.data[0]["payment_id"]
+            and check_user_exists_and_is_admin.data[0]["role_id"] != 1
+        ):
+            return (
+                jsonify(
+                    {
+                        "message": "payment details needed",
+                        "payment_id": False,
+                        "status": "warning",
+                    }
+                ),
+                402,
+            )
         data = request.get_json()
+        if (
+            not check_subscription.data[0]["robot_process_automation_subscription_id"]
+            and not data["proceed"]
+            and check_user_exists_and_is_admin.data[0]["role_id"] != 1
+        ):
+            payment_method = retrieve_payment_method(
+                check_subscription.data[0]["payment_id"]
+            )
+            print(payment_method, "payment_method")
+            paymentinfo = {
+                "brand": payment_method.card.brand,
+                "last4": payment_method.card.last4,
+                "exp_month": payment_method.card.exp_month,
+                "exp_year": payment_method.card.exp_year,
+                "country": payment_method.card.country,
+                "name": payment_method.billing_details.name,
+                "email": payment_method.billing_details.email,
+            }
+            return (
+                jsonify(
+                    {
+                        "message": "Add subscription to this card to proceed?",
+                        "payment_id": True,
+                        "payment_info": paymentinfo,
+                        "status": "warning",
+                    }
+                ),
+                402,
+            )
+
         bucket_name = create_s3_bucket(user_data["username"], user_data["user_id"])
         rule_arn = create_user_rule(
             username=user_data["username"],
-            schedule_time=data["dailyRunTime"],
-            time_zone="America/New_York",
-            role_arn=ROLE_ARN,
+            role_arn="arn:aws:iam::886351739165:role/service-role/Amazon_EventBridge_Invoke_ECS_2143115626",
             bucket_name=bucket_name,
         )
-
+        print(rule_arn, "rule_arn")
         config = (
             supabase.table("robot_process_automation_config")
             .insert(
                 {
                     "name": f"{user_data['username']}-robot",
                     "number_of_locations": data["numberOfStudioLocations"],
-                    "unlogged_booking": data["unloggedBookings"],
-                    "run_time": data["dailyRunTime"],
+                    "selected_locations": json.dumps(data["selectedStudioLocations"]),
+                    "locations": json.dumps(data["studioLocations"]),
+                    "unlogged_booking": True,
+                    "run_time": "07:30",
                     "rule_arn": rule_arn,
                     "bucket_name": bucket_name,
                     "active": True,
@@ -341,15 +446,75 @@ def save_robot_config(token):
             .execute()
         )
         if config.data:
-            logging.info(f"Robot config saved successfully for {user_data['username']}")
+            supabase.table("businesses").update(
+                {
+                    "locations": json.dumps(data["studioLocations"]),
+                }
+            ).eq("admin_id", user_data["user_id"]).execute()
+            get_price = (
+                supabase.table("prices")
+                .select("price_id")
+                .eq("type", "robot")
+                .execute()
+            )
+            if check_user_exists_and_is_admin.data[0]["role_id"] == 1:
+                supabase.table("users").update(
+                    {
+                        "status": 1,
+                    }
+                ).eq("id", user_data["user_id"]).execute()
+                insert_notification(
+                    user_data["user_id"],
+                    f"Robot config was created",
+                    "robot automation",
+                )
+                return (
+                    jsonify(
+                        {
+                            "message": "Robot config saved successfully",
+                            "status": "success",
+                        }
+                    ),
+                    200,
+                )
+
+            subscription = create_subscription(
+                check_subscription.data[0]["customer_id"],
+                get_price.data[0]["price_id"],
+                quantity=data["numberOfStudioLocations"],
+            )
+            supabase.table("businesses").update(
+                {
+                    "robot_process_automation_subscription_id": subscription[
+                        "subscription_id"
+                    ],
+                    "robot_process_automation_subscription_status": subscription[
+                        "status"
+                    ],
+                    "robot_process_automation_active": True,
+                }
+            ).eq("admin_id", user_data["user_id"]).execute()
+            supabase.table("users").update(
+                {
+                    "status": 1,
+                }
+            ).eq("id", user_data["user_id"]).execute()
+            insert_notification(
+                user_data["user_id"],
+                f"Robot config was created",
+                "robot automation",
+            )
+
             return (
                 jsonify(
-                    {"message": "Robot config saved successfully", "status": "success"}
+                    {
+                        "message": "Robot config saved successfully",
+                        "status": "success",
+                    }
                 ),
                 200,
             )
         else:
-            logging.error(f"Robot config save failed for {user_data['username']}")
             return (
                 jsonify({"message": "Robot config save failed", "status": "error"}),
                 400,
@@ -394,15 +559,11 @@ def get_robot_config(token):
                     "clubready_password": password,
                 },
             }
-            logging.info(
-                f"Robot config fetched successfully for {user_data['username']}"
-            )
             return (
                 jsonify({"robot_config": robot_config_data, "config": True}),
                 200,
             )
         else:
-            logging.error(f"No robot config found for {user_data['username']}")
             return jsonify({"message": "No robot config found", "config": False}), 200
     except Exception as e:
         logging.error(f"Error in GET api/admin/process/get-robot-config: {str(e)}")
@@ -478,7 +639,6 @@ def get_rpa_history(token, config_id):
             rpa_history = rpa_history.data
             rpa_unlogged_history = rpa_unlogged_history.data
 
-        logging.info(f"Robot config updated successfully for {user_data['username']}")
         return (
             jsonify(
                 {
@@ -522,20 +682,23 @@ def update_robot_config(token):
         data = request.get_json()
         rule_arn = update_user_rule_schedule(
             username=check_user_exists_and_is_admin.data[0]["username"],
-            schedule_time=data["dailyRunTime"],
-            time_zone="America/New_York",
         )
 
         supabase.table("robot_process_automation_config").update(
             {
-                "run_time": data["dailyRunTime"],
                 "rule_arn": rule_arn,
+                "locations": json.dumps(data["studioLocations"]),
+                "selected_locations": json.dumps(data["selectedStudioLocations"]),
                 "number_of_locations": data["numberOfStudioLocations"],
-                "unlogged_booking": data["unloggedBookings"],
+                "unlogged_booking": True,
                 "updated_at": datetime.now().isoformat(),
             }
         ).eq("id", data["id"]).execute()
-        logging.info(f"Robot config updated successfully for {user_data['username']}")
+        insert_notification(
+            user_data["user_id"],
+            f"Robot config was updated",
+            "robot automation",
+        )
         return (
             jsonify(
                 {"message": "Robot config updated successfully", "status": "success"}
@@ -565,26 +728,21 @@ def change_status_robot(token):
                 401,
             )
         data = request.get_json()
-        get_robot_config = (
-            supabase.table("robot_process_automation_config")
-            .select("*")
-            .eq("admin_id", check_user_exists_and_is_admin.data[0]["id"])
-            .execute()
-        )
-        hour, minute, seconds = map(
-            int, get_robot_config.data[0]["run_time"].split(":")
-        )
         rule_arn = update_user_rule_schedule(
             username=check_user_exists_and_is_admin.data[0]["username"],
-            schedule_time=f"{hour}:{minute}",
-            time_zone="America/New_York",
             state=data["status"],
         )
         if rule_arn:
             supabase.table("robot_process_automation_config").update(
                 {"active": True if data["status"] == "ENABLED" else False}
             ).eq("admin_id", check_user_exists_and_is_admin.data[0]["id"]).execute()
-            logging.info(f"Robot {data['status'].lower()} successfully")
+
+        insert_notification(
+            user_data["user_id"],
+            f"Robot config was {data['status'].lower()}",
+            "robot automation",
+        )
+
         return (
             jsonify(
                 {
@@ -596,6 +754,21 @@ def change_status_robot(token):
         )
     except Exception as e:
         logging.error(f"Error in POST api/admin/process/change-status-robot: {str(e)}")
+        return jsonify({"error": str(e), "status": "error"}), 500
+
+
+@routes.route("/update-settings", methods=["POST"])
+@require_bearer_token
+def update_settings(token):
+    try:
+        user_data = decode_jwt_token(token)
+        data = request.get_json()
+        return (
+            jsonify({"message": "Settings updated successfully", "status": "success"}),
+            200,
+        )
+    except Exception as e:
+        logging.error(f"Error in POST api/admin/process/update-settings: {str(e)}")
         return jsonify({"error": str(e), "status": "error"}), 500
 
 

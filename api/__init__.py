@@ -7,10 +7,16 @@ import os
 from .stretchnote.auth_routes import init_stretchnote_auth_routes
 from .admin.auth_routes import init_admin_auth_routes
 from .admin.admin_routes import init_admin_routes
+from .admin.settings import init_settings_routes
 import logging
 from logging.handlers import RotatingFileHandler
 from flask_mail import Mail
 from .utils.logging import init_logging
+from .payment.webhook import init_payment_webhook_routes
+from .admin.payment_routes import init_payment_routes
+from .notification import init_notification
+from .admin.dashboard_routes import init_dashboard_routes
+from .admin.analytics_routes import init_analytics_routes
 
 
 def create_app():
@@ -59,4 +65,10 @@ def create_app():
     init_admin_auth_routes(app)
     init_admin_routes(app)
     init_logging()
+    init_payment_routes(app)
+    init_payment_webhook_routes(app)
+    init_settings_routes(app)
+    init_notification(app)
+    init_dashboard_routes(app)
+    init_analytics_routes(app)
     return app
