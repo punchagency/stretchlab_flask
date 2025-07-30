@@ -52,6 +52,49 @@ def webhook():
                 "created_at": datetime.now().isoformat(),
             }
         ).execute()
+
+        get_rpa_subscription = (
+            supabase.table("businesses")
+            .select("robot_process_automation_subscription_id")
+            .eq(
+                "robot_process_automation_subscription_id",
+                invoice["subscription"],
+            )
+            .execute()
+        )
+        if get_rpa_subscription.data:
+            expires_at = datetime.fromtimestamp(
+                invoice["lines"]["data"][0]["period"]["end"]
+            ).isoformat()
+            supabase.table("businesses").update(
+                {
+                    "robot_process_automation_active": True,
+                    "robot_process_automation_subscription_status": invoice["status"],
+                    "robot_process_automation_subscription_expires_at": expires_at,
+                }
+            ).eq(
+                "robot_process_automation_subscription_id",
+                invoice["subscription"],
+            ).execute()
+        else:
+            get_note_subscription = (
+                supabase.table("businesses")
+                .select("note_taking_subscription_id")
+                .eq("note_taking_subscription_id", invoice["subscription"])
+                .execute()
+            )
+            if get_note_subscription.data:
+                expires_at = datetime.fromtimestamp(
+                    invoice["lines"]["data"][0]["period"]["end"]
+                ).isoformat()
+                supabase.table("businesses").update(
+                    {
+                        "note_taking_active": True,
+                        "note_taking_subscription_status": invoice["status"],
+                        "note_taking_subscription_expires_at": expires_at,
+                    }
+                ).eq("note_taking_subscription_id", invoice["subscription"]).execute()
+
         supabase.table("notifications").insert(
             {
                 "user_id": get_user.data[0]["admin_id"],
@@ -92,6 +135,7 @@ def webhook():
                         "created_at": datetime.now().isoformat(),
                     }
                 ).execute()
+
                 supabase.table("notifications").insert(
                     {
                         "user_id": get_user.data[0]["admin_id"],
@@ -120,6 +164,41 @@ def webhook():
                         "type": "payment",
                     }
                 ).execute()
+            get_rpa_subscription = (
+                supabase.table("businesses")
+                .select("robot_process_automation_subscription_id")
+                .eq(
+                    "robot_process_automation_subscription_id",
+                    invoice["subscription"],
+                )
+                .execute()
+            )
+            if get_rpa_subscription.data:
+                supabase.table("businesses").update(
+                    {
+                        "robot_process_automation_active": False,
+                        "robot_process_automation_subscription_status": "inactive",
+                    }
+                ).eq(
+                    "robot_process_automation_subscription_id",
+                    invoice["subscription"],
+                ).execute()
+            else:
+                get_note_subscription = (
+                    supabase.table("businesses")
+                    .select("note_taking_subscription_id")
+                    .eq("note_taking_subscription_id", invoice["subscription"])
+                    .execute()
+                )
+                if get_note_subscription.data:
+                    supabase.table("businesses").update(
+                        {
+                            "note_taking_active": False,
+                            "note_taking_subscription_status": "inactive",
+                        }
+                    ).eq(
+                        "note_taking_subscription_id", invoice["subscription"]
+                    ).execute()
     elif event["type"] == "customer.subscription.updated":
         subscription = event["data"]["object"]
         subscription_id = subscription["id"]

@@ -53,7 +53,7 @@ def login():
         user = (
             supabase.table("users")
             .select("*, roles(name)")
-            .eq("email", data["email"])
+            .eq("email", data["email"].lower())
             .execute()
         )
         if len(user.data) == 0:
@@ -195,7 +195,7 @@ def verify_2fa_login():
         user = (
             supabase.table("users")
             .select("*, roles(name)")
-            .eq("email", email)
+            .eq("email", email.lower())
             .execute()
         )
 
@@ -306,14 +306,14 @@ def forgot_password():
         data = request.get_json()
         email = data.get("email")
         frontend_url = os.environ.get("ADMIN_FRONTEND_URL")
-        user = supabase.table("users").select("*").eq("email", email).execute()
+        user = supabase.table("users").select("*").eq("email", email.lower()).execute()
         if len(user.data) == 0:
             return jsonify({"message": "User does not exist", "status": "error"}), 404
 
         if user.data[0]["role_id"] != 1 and user.data[0]["role_id"] != 2:
             return jsonify({"message": "User is not an admin", "status": "error"}), 400
         token = jwt.encode(
-            {"email": email},
+            {"email": email.lower()},
             SECRET_KEY,
             algorithm="HS256",
         )
@@ -347,7 +347,7 @@ def reset_password():
         user = (
             supabase.table("users")
             .select("*")
-            .eq("email", user_data["email"])
+            .eq("email", user_data["email"].lower())
             .execute()
         )
         if len(user.data) == 0:
@@ -356,7 +356,7 @@ def reset_password():
         updated_user = (
             supabase.table("users")
             .update({"password": hashed_password})
-            .eq("email", user_data["email"])
+            .eq("email", user_data["email"].lower())
             .execute()
         )
         if len(updated_user.data) == 0:
@@ -408,7 +408,10 @@ def register():
         }
         data = validate_request(request.get_json(), schema)
         user_exists = (
-            supabase.table("users").select("*").eq("email", data["email"]).execute()
+            supabase.table("users")
+            .select("*")
+            .eq("email", data["email"].lower())
+            .execute()
         )
         if user_exists.data:
             return jsonify({"message": "User already exists", "status": "error"}), 400
@@ -417,7 +420,7 @@ def register():
             supabase.table("users")
             .insert(
                 {
-                    "email": data["email"],
+                    "email": data["email"].lower(),
                     "username": data["username"],
                     "password": hashed_password,
                     "role_id": data["role_id"],
@@ -427,7 +430,7 @@ def register():
             )
             .execute()
         )
-        customer = create_customer(data["email"], data["username"])
+        customer = create_customer(data["email"].lower(), data["username"])
         supabase.table("businesses").insert(
             {
                 "username": data["username"],
@@ -454,7 +457,7 @@ def register():
         user = (
             supabase.table("users")
             .select("*, roles(name)")
-            .eq("email", data["email"])
+            .eq("email", data["email"].lower())
             .execute()
         )
         role_name = (
@@ -506,7 +509,7 @@ def resend_2fa_verification_code():
     try:
         data = request.get_json()
         email = data.get("email")
-        user = supabase.table("users").select("*").eq("email", email).execute()
+        user = supabase.table("users").select("*").eq("email", email.lower()).execute()
         if not user.data:
             return jsonify({"message": "User not found", "status": "error"}), 404
         verification_code = generate_verification_code()
@@ -516,7 +519,7 @@ def resend_2fa_verification_code():
                 "verification_code": verification_code,
                 "verification_code_expires_at": expiration_time,
             }
-        ).eq("email", email).execute()
+        ).eq("email", email.lower()).execute()
         send_email(
             "2FA Verification Code",
             [email],
@@ -557,7 +560,7 @@ def verify(token):
         user = (
             supabase.table("users")
             .select("*")
-            .eq("email", decoded_token["email"])
+            .eq("email", decoded_token["email"].lower())
             .execute()
         )
         if user.data:
@@ -572,7 +575,7 @@ def verify(token):
                             "verification_code": None,
                             "verification_code_expires_at": None,
                         }
-                    ).eq("email", decoded_token["email"]).execute()
+                    ).eq("email", decoded_token["email"].lower()).execute()
                     return (
                         jsonify(
                             {
@@ -626,7 +629,7 @@ def resend_verification_code(token):
         user = (
             supabase.table("users")
             .select("*")
-            .eq("email", decoded_token["email"])
+            .eq("email", decoded_token["email"].lower())
             .execute()
         )
         if user.data:
@@ -637,7 +640,7 @@ def resend_verification_code(token):
                     "verification_code": verification_code,
                     "verification_code_expires_at": expiration_time,
                 }
-            ).eq("email", decoded_token["email"]).execute()
+            ).eq("email", decoded_token["email"].lower()).execute()
             send_email(
                 "Verification Code",
                 [user.data[0]["email"]],

@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+import logging
 
 load_dotenv()
 
@@ -74,7 +75,7 @@ def create_subscription(customer_id, price_id, quantity=1):
             proration_behavior="create_prorations",
             expand=["latest_invoice.payment_intent"],
         )
-        print(subscription, "subscription")
+        logging.info(subscription, "subscription")
         return {
             "subscription_id": subscription.id,
             "status": subscription.status,

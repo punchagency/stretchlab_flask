@@ -35,59 +35,78 @@ def get_bookings_info(token):
         business_info = user.data[0]
         business_admin_id = business_info["admin_id"]
         business_name = business_info["username"]
-        flexologists = (
-            supabase.table("users")
-            .select("*")
+        bookings_in_month = 0
+        bookings_in_last_month = 0
+        get_config_id = (
+            supabase.table("robot_process_automation_config")
+            .select("id")
             .eq("admin_id", business_admin_id)
             .execute()
         )
-        if not flexologists.data:
-            return jsonify({"message": "No Flexologists found", "status": "error"}), 404
-        bookings_in_month = 0
-        bookings_in_last_month = 0
-        flexologists_info = flexologists.data
+        if not get_config_id.data:
+            return jsonify({"message": "No config id found", "status": "error"}), 404
 
         first_day_this_month = datetime.now().replace(day=1)
         first_day_last_month = (first_day_this_month - timedelta(days=1)).replace(day=1)
+        year = first_day_this_month.year
+        month = first_day_this_month.month
+        num_days = monthrange(year, month)[1]
+        first_day_next_month = first_day_this_month + timedelta(days=num_days)
 
-        for flexologist in flexologists_info:
-            bookings_in_month_flexologist = (
-                supabase.table("clubready_bookings")
+        offset = 0
+        limit = 1000
+
+        while True:
+            bookings_in_month_records = (
+                supabase.table("robot_process_automation_notes_records")
                 .select("*")
-                .eq("user_id", flexologist["id"])
+                .eq("config_id", get_config_id.data[0]["id"])
                 .gte("created_at", first_day_this_month.strftime("%Y-%m-%d"))
                 .lt(
                     "created_at",
-                    (first_day_this_month + timedelta(days=31)).strftime("%Y-%m-%d"),
+                    first_day_next_month.strftime("%Y-%m-%d"),
                 )
+                .range(offset, offset + limit - 1)
                 .execute()
             )
-            if bookings_in_month_flexologist.data:
-                bookings_in_month += len(bookings_in_month_flexologist.data)
+            if bookings_in_month_records.data:
+                bookings_in_month += len(bookings_in_month_records.data)
+            if len(bookings_in_month_records.data) < limit:
+                break
+            offset += limit
 
-            bookings_in_last_month_flexologist = (
-                supabase.table("clubready_bookings")
+        offset = 0
+        limit = 1000
+
+        while True:
+
+            bookings_in_last_month_records = (
+                supabase.table("robot_process_automation_notes_records")
                 .select("*")
-                .eq("user_id", flexologist["id"])
+                .eq("config_id", get_config_id.data[0]["id"])
                 .gte("created_at", first_day_last_month.strftime("%Y-%m-%d"))
                 .lt("created_at", first_day_this_month.strftime("%Y-%m-%d"))
+                .range(offset, offset + limit - 1)
                 .execute()
             )
-            if bookings_in_last_month_flexologist.data:
-                bookings_in_last_month += len(bookings_in_last_month_flexologist.data)
+            if bookings_in_last_month_records.data:
+                bookings_in_last_month += len(bookings_in_last_month_records.data)
+            if len(bookings_in_last_month_records.data) < limit:
+                break
+            offset += limit
 
-            if bookings_in_month == 0 and bookings_in_last_month == 0:
-                aggregation = 0
+        if bookings_in_month == 0 and bookings_in_last_month == 0:
+            aggregation = 0
 
-            elif bookings_in_last_month == 0:
-                aggregation = ((bookings_in_month - bookings_in_last_month) / 1) * 100
+        elif bookings_in_last_month == 0:
+            aggregation = ((bookings_in_month - bookings_in_last_month) / 1) * 100
 
-            else:
-                aggregation = (
-                    (bookings_in_month - bookings_in_last_month)
-                    / bookings_in_last_month
-                    * 100
-                )
+        else:
+            aggregation = (
+                (bookings_in_month - bookings_in_last_month)
+                / bookings_in_last_month
+                * 100
+            )
 
         bookings_info = {
             "bookings_in_month": bookings_in_month,
@@ -147,6 +166,10 @@ def get_chart_filters(token):
             .eq("admin_id", user_id)
             .execute()
         )
+        get_user_info = (
+            supabase.table("users").select("role_id").eq("id", user_id).execute()
+        )
+        user_info = get_user_info.data[0]
 
         locations = (
             supabase.table("robot_process_automation_config")
@@ -174,7 +197,10 @@ def get_chart_filters(token):
             },
         ]
 
-        if business_info.data[0]["note_taking_subscription_id"]:
+        if (
+            business_info.data[0]["note_taking_subscription_id"]
+            or user_info["role_id"] == 1
+        ):
             filters = [
                 {
                     "label": "% App Submissions",

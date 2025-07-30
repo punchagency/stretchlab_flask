@@ -548,6 +548,12 @@ def get_robot_config(token):
             .execute()
         )
         if robot_config.data:
+            get_rpa_sub_status = (
+                supabase.table("businesses")
+                .select("robot_process_automation_active")
+                .eq("admin_id", user_data["user_id"])
+                .execute()
+            )
             password = reverse_hash_credentials(
                 robot_config.data[0]["users"]["clubready_username"],
                 robot_config.data[0]["users"]["clubready_password"],
@@ -558,6 +564,9 @@ def get_robot_config(token):
                     **robot_config.data[0]["users"],
                     "clubready_password": password,
                 },
+                "rpa_sub_status": get_rpa_sub_status.data[0][
+                    "robot_process_automation_active"
+                ],
             }
             return (
                 jsonify({"robot_config": robot_config_data, "config": True}),
