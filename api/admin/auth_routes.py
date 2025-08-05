@@ -82,6 +82,12 @@ def login():
             else "Unknown"
         )
         if user.data:
+            get_business_details = (
+                supabase.table("businesses")
+                .select("*")
+                .eq("admin_id", user.data[0]["id"])
+                .execute()
+            )
             if verify_password(data["password"], user.data[0]["password"]):
                 if user.data[0]["two_factor_auth"]:
                     verification_code = generate_verification_code()
@@ -133,6 +139,9 @@ def login():
                         "email": user.data[0]["email"],
                         "role_id": user.data[0]["role_id"],
                         "role_name": role_name,
+                        "rpa_verified": get_business_details.data[0][
+                            "robot_process_automation_active"
+                        ],
                         "username": user.data[0]["username"],
                     },
                     SECRET_KEY,
@@ -213,6 +222,12 @@ def verify_2fa_login():
             > datetime.now()
         ):
             if user.data[0]["verification_code"] == code:
+                get_business_details = (
+                    supabase.table("businesses")
+                    .select("*")
+                    .eq("admin_id", user.data[0]["id"])
+                    .execute()
+                )
                 supabase.table("users").update(
                     {
                         "verification_code": None,
@@ -226,6 +241,9 @@ def verify_2fa_login():
                         "role_id": user.data[0]["role_id"],
                         "role_name": role_name,
                         "username": user.data[0]["username"],
+                        "rpa_verified": get_business_details.data[0][
+                            "robot_process_automation_active"
+                        ],
                     },
                     SECRET_KEY,
                     algorithm="HS256",
@@ -472,6 +490,7 @@ def register():
                 "role_id": user.data[0]["role_id"],
                 "role_name": role_name,
                 "username": user.data[0]["username"],
+                "rpa_verified": False,
             },
             SECRET_KEY,
             algorithm="HS256",

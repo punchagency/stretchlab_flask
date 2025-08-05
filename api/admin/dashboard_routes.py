@@ -152,24 +152,37 @@ def get_chart_filters(token):
     try:
         user_data = decode_jwt_token(token)
         user_id = user_data["user_id"]
-        flexologists = (
-            supabase.table("users")
-            .select("full_name, id")
+        filter_by = request.args.get("filter_by", None)
+        get_config_id = (
+            supabase.table("robot_process_automation_config")
+            .select("id")
             .eq("admin_id", user_id)
-            .eq("role_id", 3)
-            .eq("status", 1)
             .execute()
         )
+        if not get_config_id.data:
+            return jsonify({"error": "No config id found", "status": "error"}), 400
+
+        flexologists = (
+            supabase.table("robot_process_automation_notes_records")
+            .select("flexologist_name")
+            .eq("config_id", get_config_id.data[0]["id"])
+            .execute()
+        )
+        if flexologists.data:
+            flexologists = sorted(
+                set(
+                    flexologist["flexologist_name"] for flexologist in flexologists.data
+                )
+            )
+        else:
+            flexologists = []
+
         business_info = (
             supabase.table("businesses")
             .select(" note_taking_subscription_id")
             .eq("admin_id", user_id)
             .execute()
         )
-        get_user_info = (
-            supabase.table("users").select("role_id").eq("id", user_id).execute()
-        )
-        user_info = get_user_info.data[0]
 
         locations = (
             supabase.table("robot_process_automation_config")
@@ -177,30 +190,38 @@ def get_chart_filters(token):
             .eq("admin_id", user_id)
             .execute()
         )
+        if not filter_by:
+            filters = [
+                {
+                    "label": "Total Client Visits",
+                    "value": "total_client_visits",
+                },
+                {
+                    "label": "Avg 1st Visit Quality %",
+                    "value": "avg_1st_visit_quality_percentage",
+                },
+                {
+                    "label": "Avg Subsequent Visit Quality %",
+                    "value": "avg_subsequent_visit_quality_percentage",
+                },
+                {
+                    "label": "Avg Aggregate Note Quality %",
+                    "value": "avg_aggregate_note_quality_percentage",
+                },
+            ]
+        else:
+            filters = [
+                {
+                    "label": "Total Client Visits",
+                    "value": "total_client_visits",
+                },
+                {
+                    "label": "Avg. Note Quality %",
+                    "value": "note_quality_percentage",
+                },
+            ]
 
-        filters = [
-            {
-                "label": "Total Client Visits",
-                "value": "total_client_visits",
-            },
-            {
-                "label": "Avg 1st Visit Quality %",
-                "value": "avg_1st_visit_quality_percentage",
-            },
-            {
-                "label": "Avg Subsequent Visit Quality %",
-                "value": "avg_subsequent_visit_quality_percentage",
-            },
-            {
-                "label": "Avg Aggregate Note Quality %",
-                "value": "avg_aggregate_note_quality_percentage",
-            },
-        ]
-
-        if (
-            business_info.data[0]["note_taking_subscription_id"]
-            or user_info["role_id"] == 1
-        ):
+        if business_info.data[0]["note_taking_subscription_id"]:
             filters = [
                 {
                     "label": "% App Submissions",
@@ -213,7 +234,7 @@ def get_chart_filters(token):
                 {
                     "status": "success",
                     "data": {
-                        "flexologists": flexologists.data,
+                        "flexologists": list(flexologists),
                         "locations": (
                             json.loads(locations.data[0]["selected_locations"])
                             if locations.data[0]["selected_locations"]
@@ -252,7 +273,23 @@ def get_second_row(token):
                 400,
             )
 
-        start_date, end_date = get_start_and_end_date(duration)
+        if duration == "custom":
+            start_date_str = request.args.get("start_date")
+            end_date_str = request.args.get("end_date")
+            if not start_date_str or not end_date_str:
+                return (
+                    jsonify(
+                        {"error": "Start and end date are required", "status": "error"}
+                    ),
+                    400,
+                )
+            start_date, end_date = get_start_and_end_date(
+                duration, start_date_str, end_date_str
+            )
+
+        else:
+            start_date, end_date = get_start_and_end_date(duration)
+
         if not start_date or not end_date:
             return (
                 jsonify({"error": "Invalid duration", "status": "error"}),
@@ -267,7 +304,7 @@ def get_second_row(token):
         )
         if not get_config_id.data:
             return jsonify({"error": "No config id found", "status": "error"}), 400
-
+        print(start_date, end_date, "start_date, end_date")
         if dataset == "total_client_visits":
             total_visits = []
             offset = 0
@@ -347,7 +384,7 @@ def get_second_row(token):
                         if len(data) < limit:
                             break
                         offset += limit
-
+            print(len(total_visits), "total_visits")
             data = handle_total_visits(duration, total_visits, start_date, end_date)
             return jsonify({"status": "success", "data": data["data"]}), 200
 
@@ -572,6 +609,7 @@ def get_second_row(token):
                             .select("*")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .eq("first_timer", first_timer)
+                            .neq("status", "No Show")
                             .gte("created_at", start_date)
                             .lt("created_at", end_date)
                             .range(offset, offset + limit - 1)
@@ -600,6 +638,9 @@ def get_second_row(token):
                         all_bookings.append(booking)
 
                 else:
+                    print(location, "location")
+                    print(start_date, "start_date")
+                    print(end_date, "end_date")
                     while True:
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
@@ -607,6 +648,7 @@ def get_second_row(token):
                             .eq("config_id", get_config_id.data[0]["id"])
                             .eq("first_timer", first_timer)
                             .eq("location", location)
+                            .neq("status", "No Show")
                             .gte("created_at", start_date)
                             .lt("created_at", end_date)
                             .range(offset, offset + limit - 1)
@@ -639,6 +681,7 @@ def get_second_row(token):
                             .select("*")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .eq("first_timer", first_timer)
+                            .neq("status", "No Show")
                             .gte("created_at", start_date)
                             .lt("created_at", end_date)
                             .range(offset, offset + limit - 1)
@@ -670,6 +713,7 @@ def get_second_row(token):
                             .select("*")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .eq("flexologist_name", flexologist)
+                            .neq("status", "No Show")
                             .gte("created_at", start_date)
                             .lt("created_at", end_date)
                             .range(offset, offset + limit - 1)
@@ -695,6 +739,7 @@ def get_second_row(token):
                         booking["percentage"] = percentage
                         all_bookings.append(booking)
 
+            print(len(all_bookings), "all_bookings")
             data = handle_avg_visit_quality_percentage(
                 duration, all_bookings, start_date, end_date
             )
@@ -721,6 +766,7 @@ def get_second_row(token):
                             supabase.table("robot_process_automation_notes_records")
                             .select("*")
                             .eq("config_id", get_config_id.data[0]["id"])
+                            .neq("status", "No Show")
                             .gte("created_at", start_date)
                             .lt("created_at", end_date)
                             .range(offset, offset + limit - 1)
@@ -753,6 +799,7 @@ def get_second_row(token):
                             .select("*")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .eq("location", location)
+                            .neq("status", "No Show")
                             .gte("created_at", start_date)
                             .lt("created_at", end_date)
                             .range(offset, offset + limit - 1)
@@ -783,6 +830,7 @@ def get_second_row(token):
                             supabase.table("robot_process_automation_notes_records")
                             .select("*")
                             .eq("config_id", get_config_id.data[0]["id"])
+                            .neq("status", "No Show")
                             .gte("created_at", start_date)
                             .lt("created_at", end_date)
                             .range(offset, offset + limit - 1)
@@ -814,6 +862,7 @@ def get_second_row(token):
                             .select("*")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .eq("flexologist_name", flexologist)
+                            .neq("status", "No Show")
                             .gte("created_at", start_date)
                             .lt("created_at", end_date)
                             .range(offset, offset + limit - 1)
@@ -854,8 +903,8 @@ def get_third_row(token):
     try:
         user_data = decode_jwt_token(token)
         user_id = user_data["user_id"]
-        today_date = datetime.now().strftime("%Y-%m-%d")
-
+        timezone_header = request.headers.get("X-Client-Timezone")
+        today_date = datetime.now(timezone_header).strftime("%Y-%m-%d")
         flexologists = (
             supabase.table("users")
             .select("full_name, id, status, profile_picture_url, last_login")
@@ -864,6 +913,26 @@ def get_third_row(token):
             .in_("status", [1, 3, 4])
             .execute()
         )
+
+        if flexologists.data:
+            for flex in flexologists.data:
+                bookings = (
+                    supabase.table("clubready_bookings")
+                    .select("*")
+                    .eq("user_id", flex["id"])
+                    .gte("created_at", today_date)
+                    .execute()
+                )
+
+                if bookings.data:
+                    flex["bookings"] = len(bookings.data)
+                else:
+                    flex["bookings"] = 0
+
+        flexologists.data = sorted(
+            flexologists.data, key=lambda x: x["bookings"], reverse=True
+        )
+
         return jsonify({"status": "success", "data": flexologists.data}), 200
     except Exception as e:
         logging.error(f"Error in POST api/admin/dashboard/third_row: {str(e)}")

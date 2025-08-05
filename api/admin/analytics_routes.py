@@ -16,6 +16,7 @@ def rpa_audit(token):
         user_data = decode_jwt_token(token)
         duration = request.args.get("duration")
         location = request.args.get("location")
+        filter_metric = request.args.get("filter_metric")
         flexologist_name = request.args.get("flexologist_name")
         user_id = user_data["user_id"]
 
@@ -50,39 +51,77 @@ def rpa_audit(token):
         if not config_id:
             return jsonify({"error": "No RPA config found", "status": "error"}), 400
 
+        filter_bookings = None
+
+        if filter_metric == "first":
+            filter_bookings = "YES"
+
+        if filter_metric == "subsequent":
+            filter_bookings = "NO"
+
         config_id = config_id[0]["id"]
-        print(start_date, end_date, "duration")
         rpa_notes = []
         offset = 0
         limit = 1000
         if not location and not flexologist_name:
             while True:
-                data = (
-                    supabase.table("robot_process_automation_notes_records")
-                    .select("*")
-                    .eq("config_id", config_id)
-                    .gte("created_at", start_date)
-                    .lt("created_at", end_date)
-                    .range(offset, offset + limit - 1)
-                    .execute()
-                ).data
+                if filter_bookings:
+                    data = (
+                        supabase.table("robot_process_automation_notes_records")
+                        .select("*")
+                        .eq("config_id", config_id)
+                        .eq("first_timer", filter_bookings)
+                        .neq("status", "No Show")
+                        .gte("created_at", start_date)
+                        .lt("created_at", end_date)
+                        .range(offset, offset + limit - 1)
+                        .execute()
+                    ).data
+                else:
+                    data = (
+                        supabase.table("robot_process_automation_notes_records")
+                        .select("*")
+                        .eq("config_id", config_id)
+                        .neq("status", "No Show")
+                        .gte("created_at", start_date)
+                        .lt("created_at", end_date)
+                        .range(offset, offset + limit - 1)
+                        .execute()
+                    ).data
                 rpa_notes.extend(data)
                 if len(data) < limit:
                     break
                 offset += limit
 
         if location and not flexologist_name:
+            print(start_date, end_date, "start_date, end_date")
+
             while True:
-                data = (
-                    supabase.table("robot_process_automation_notes_records")
-                    .select("*")
-                    .eq("config_id", config_id)
-                    .eq("location", location)
-                    .gte("created_at", start_date)
-                    .lt("created_at", end_date)
-                    .range(offset, offset + limit - 1)
-                    .execute()
-                ).data
+                if filter_bookings:
+                    data = (
+                        supabase.table("robot_process_automation_notes_records")
+                        .select("*")
+                        .eq("config_id", config_id)
+                        .eq("location", location)
+                        .eq("first_timer", filter_bookings)
+                        .neq("status", "No Show")
+                        .gte("created_at", start_date)
+                        .lt("created_at", end_date)
+                        .range(offset, offset + limit - 1)
+                        .execute()
+                    ).data
+                else:
+                    data = (
+                        supabase.table("robot_process_automation_notes_records")
+                        .select("*")
+                        .eq("config_id", config_id)
+                        .eq("location", location)
+                        .neq("status", "No Show")
+                        .gte("created_at", start_date)
+                        .lt("created_at", end_date)
+                        .range(offset, offset + limit - 1)
+                        .execute()
+                    ).data
                 rpa_notes.extend(data)
                 if len(data) < limit:
                     break
@@ -90,16 +129,31 @@ def rpa_audit(token):
 
         if flexologist_name and not location:
             while True:
-                data = (
-                    supabase.table("robot_process_automation_notes_records")
-                    .select("*")
-                    .eq("config_id", config_id)
-                    .eq("flexologist_name", flexologist_name)
-                    .gte("created_at", start_date)
-                    .lt("created_at", end_date)
-                    .range(offset, offset + limit - 1)
-                    .execute()
-                ).data
+                if filter_bookings:
+                    data = (
+                        supabase.table("robot_process_automation_notes_records")
+                        .select("*")
+                        .eq("config_id", config_id)
+                        .eq("flexologist_name", flexologist_name)
+                        .eq("first_timer", filter_bookings)
+                        .neq("status", "No Show")
+                        .gte("created_at", start_date)
+                        .lt("created_at", end_date)
+                        .range(offset, offset + limit - 1)
+                        .execute()
+                    ).data
+                else:
+                    data = (
+                        supabase.table("robot_process_automation_notes_records")
+                        .select("*")
+                        .eq("config_id", config_id)
+                        .eq("flexologist_name", flexologist_name)
+                        .neq("status", "No Show")
+                        .gte("created_at", start_date)
+                        .lt("created_at", end_date)
+                        .range(offset, offset + limit - 1)
+                        .execute()
+                    ).data
                 rpa_notes.extend(data)
                 if len(data) < limit:
                     break
@@ -107,17 +161,33 @@ def rpa_audit(token):
 
         if location and flexologist_name:
             while True:
-                data = (
-                    supabase.table("robot_process_automation_notes_records")
-                    .select("*")
-                    .eq("config_id", config_id)
-                    .eq("location", location)
-                    .eq("flexologist_name", flexologist_name)
-                    .gte("created_at", start_date)
-                    .lt("created_at", end_date)
-                    .range(offset, offset + limit - 1)
-                    .execute()
-                ).data
+                if filter_bookings:
+                    data = (
+                        supabase.table("robot_process_automation_notes_records")
+                        .select("*")
+                        .eq("config_id", config_id)
+                        .eq("location", location)
+                        .eq("flexologist_name", flexologist_name)
+                        .eq("first_timer", filter_bookings)
+                        .neq("status", "No Show")
+                        .gte("created_at", start_date)
+                        .lt("created_at", end_date)
+                        .range(offset, offset + limit - 1)
+                        .execute()
+                    ).data
+                else:
+                    data = (
+                        supabase.table("robot_process_automation_notes_records")
+                        .select("*")
+                        .eq("config_id", config_id)
+                        .eq("location", location)
+                        .eq("flexologist_name", flexologist_name)
+                        .neq("status", "No Show")
+                        .gte("created_at", start_date)
+                        .lt("created_at", end_date)
+                        .range(offset, offset + limit - 1)
+                        .execute()
+                    ).data
                 rpa_notes.extend(data)
                 if len(data) < limit:
                     break
@@ -167,19 +237,28 @@ def rpa_audit(token):
         )
 
         # Hard coding for now would be better if i add it to the db
-        opportunities = [
-            "Needs Analysis: Deep Emotional Reason(Why)",
-            "Needs Analysis: Physiscal Need",
-            "Session Note: Problem Presented",
-            "Session Note: What was worked On",
-            "Session Note: Tension Level & Frequency",
-            "Session Note: Prescribed Action",
-            "Session Note: Homework",
-            "Quality: No Future Bookings",
-            "Quality: Missing Homework",
-            "Quality: Missing Waiver",
-            "Quality: Other",
-        ]
+        if filter_metric in ["first", "all"]:
+            opportunities = [
+                "Needs Analysis: Deep Emotional Reason(Why)",
+                "Needs Analysis: Physiscal Need",
+                "Session Note: Problem Presented",
+                "Session Note: What was worked On",
+                "Session Note: Tension Level & Frequency",
+                "Session Note: Prescribed Action",
+                "Session Note: Homework",
+                "Quality: No Future Bookings",
+                "Quality: Missing Homework",
+                "Quality: Missing Waiver",
+                "Quality: Other",
+            ]
+        else:
+            opportunities = [
+                "Session Note: Problem Presented",
+                "Session Note: What was worked On",
+                "Session Note: Tension Level & Frequency",
+                "Session Note: Prescribed Action",
+                "Session Note: Homework",
+            ]
 
         notes_with_opportunities = []
         locations_with_opportunity_count = {}
@@ -299,11 +378,14 @@ def rpa_audit(token):
                     "total_notes": len(rpa_notes),
                     "total_notes_with_opportunities": len(notes_with_opportunities),
                     "location": [
-                        {"location": location, "percentage": percentage}
+                        {"location": location, "percentage": round(100 - percentage, 2)}
                         for location, percentage in sorted_opportunities_count_with_location
                     ],
                     "flexologist": [
-                        {"flexologist": flexologist, "percentage": percentage}
+                        {
+                            "flexologist": flexologist,
+                            "percentage": round(100 - percentage, 2),
+                        }
                         for flexologist, percentage in sorted_flexologist_with_opportunity_count
                     ],
                 }
@@ -360,6 +442,7 @@ def get_rpa_audit_details(token):
                     supabase.table("robot_process_automation_notes_records")
                     .select("*")
                     .eq("config_id", config_id)
+                    .neq("status", "No Show")
                     .gte("created_at", start_date)
                     .lt("created_at", end_date)
                     .range(offset, offset + limit - 1)
@@ -377,6 +460,7 @@ def get_rpa_audit_details(token):
                     .select("*")
                     .eq("config_id", config_id)
                     .eq("location", location)
+                    .neq("status", "No Show")
                     .gte("created_at", start_date)
                     .lt("created_at", end_date)
                     .range(offset, offset + limit - 1)
@@ -394,6 +478,7 @@ def get_rpa_audit_details(token):
                     .select("*")
                     .eq("config_id", config_id)
                     .eq("flexologist_name", flexologist_name)
+                    .neq("status", "No Show")
                     .gte("created_at", start_date)
                     .lt("created_at", end_date)
                     .range(offset, offset + limit - 1)
@@ -412,6 +497,7 @@ def get_rpa_audit_details(token):
                     .eq("config_id", config_id)
                     .eq("flexologist_name", flexologist_name)
                     .eq("location", location)
+                    .neq("status", "No Show")
                     .gte("created_at", start_date)
                     .lt("created_at", end_date)
                     .range(offset, offset + limit - 1)
@@ -578,6 +664,7 @@ def get_ranking_analytics(token):
         data = request.json
         rank_by = data.get("rank_by", "location")
         metric = data.get("metric", "total_visits")
+        filter_metric = data.get("filter_metric", "all")
         duration = data["duration"]
         if duration == "custom":
             start_date_str = data["start_date"]
@@ -673,6 +760,7 @@ def get_ranking_analytics(token):
                     .select("*")
                     .eq("config_id", config_id)
                     .gte("created_at", start_date)
+                    .lt("created_at", end_date)
                     .neq("status", "No Show")
                     .range(offset, offset + limit - 1)
                     .execute()
@@ -715,17 +803,24 @@ def get_ranking_analytics(token):
                 )
 
             for flexologist in flexologists:
-                app_submitted_by_flexologist = (
-                    supabase.table("clubready_bookings")
-                    .select("*")
-                    .eq("user_id", flexologist["id"])
-                    .eq("submitted", True)
-                    .gte("created_at", start_date)
-                    .lt("created_at", end_date)
-                    .execute()
-                    .data
-                )
-                app_submitted.extend(app_submitted_by_flexologist)
+                offset = 0
+                limit = 1000
+                while True:
+                    app_submitted_by_flexologist = (
+                        supabase.table("clubready_bookings")
+                        .select("*")
+                        .eq("user_id", flexologist["id"])
+                        .eq("submitted", True)
+                        .gte("created_at", start_date)
+                        .lt("created_at", end_date)
+                        .range(offset, offset + limit - 1)
+                        .execute()
+                        .data
+                    )
+                    app_submitted.extend(app_submitted_by_flexologist)
+                    if len(app_submitted_by_flexologist) < limit:
+                        break
+                    offset += limit
 
             total_visits_per_location = {}
             total_visits_per_flex = {}
@@ -738,17 +833,16 @@ def get_ranking_analytics(token):
                     total_visits_per_location.get(loc, 0) + 1
                 )
                 total_visits_per_flex[flex] = total_visits_per_flex.get(flex, 0) + 1
-
+            print(total_visits_per_location, "total_visits_per_location")
             submitted_per_location = {}
             submitted_per_flex = {}
             for sub in app_submitted:
-                loc = sub["location"]
+                loc = sub["location"].lower()
                 flex = (
                     sub["flexologist_name"].lower() if sub["flexologist_name"] else ""
                 )
                 submitted_per_location[loc] = submitted_per_location.get(loc, 0) + 1
                 submitted_per_flex[flex] = submitted_per_flex.get(flex, 0) + 1
-
             location_percentages = {}
             for loc in total_visits_per_location:
                 sub = submitted_per_location.get(loc, 0)
@@ -769,29 +863,45 @@ def get_ranking_analytics(token):
                 flex_percentages.items(), key=lambda item: item[1], reverse=True
             )
 
+            # Calculate overall percentage
+            total_robot_bookings = len(all_notes)
+            total_app_submitted = len(app_submitted)
+            overall_percentage = round(
+                (
+                    (total_app_submitted / total_robot_bookings * 100)
+                    if total_robot_bookings > 0
+                    else 0
+                ),
+                2,
+            )
+
             if rank_by == "location":
                 data = [{"name": loc, "count": pct} for loc, pct in sorted_locations]
             else:
                 data = [{"name": flex, "count": pct} for flex, pct in sorted_flex]
 
+            # Add overall percentage to data or response
             return (
                 jsonify(
                     {
                         "status": "success",
                         "data": data,
                         "metric": metric,
+                        "overall_percentage": overall_percentage,
                     }
                 ),
                 200,
             )
 
-        if (
-            metric == "avg_1st_visit_quality_percentage"
-            or metric == "avg_subsequent_visit_quality_percentage"
-        ):
-            first_timer = (
-                "YES" if metric == "avg_1st_visit_quality_percentage" else "NO"
-            )
+        first = metric == "note_quality_percentage" and filter_metric == "first"
+        subsequent = (
+            metric == "note_quality_percentage" and filter_metric == "subsequent"
+        )
+        get_all = metric == "note_quality_percentage" and filter_metric == "all"
+
+        if first or subsequent:
+            print(first, subsequent, "first, subsequent")
+            first_timer = "YES" if first else "NO"
             offset = 0
             limit = 1000
             all_notes = []
@@ -860,7 +970,8 @@ def get_ranking_analytics(token):
 
             return jsonify({"status": "success", "data": data, "metric": metric}), 200
 
-        if metric == "avg_aggregate_note_quality_percentage":
+        if get_all:
+            print("yep")
             offset = 0
             limit = 1000
             all_notes = []

@@ -8,6 +8,7 @@ from ..payment.stripe_utils import (
     create_payment_method,
     get_subscription_details,
     cancel_subscription,
+    restart_subscription,
 )
 import logging
 from ..notification import insert_notification
@@ -268,6 +269,87 @@ def cancel_subscription_route(token):
         )
     except Exception as e:
         logging.error(f"Error in POST api/admin/payment/cancel-subscription: {str(e)}")
+        return jsonify({"error": str(e), "status": "error"}), 500
+
+
+@routes.route("/restart-subscription", methods=["POST"])
+@require_bearer_token
+def restart_subscription_route(token):
+    try:
+        user_data = decode_jwt_token(token)
+        data = request.get_json()
+        sub_type = data["type"]
+        if sub_type == "note_taking":
+            subscription_id = (
+                supabase.table("businesses")
+                .select("note_taking_subscription_id")
+                .eq("admin_id", user_data["user_id"])
+                .execute()
+            )
+            if subscription_id.data[0]["note_taking_subscription_id"]:
+                result = restart_subscription(
+                    subscription_id.data[0]["note_taking_subscription_id"]
+                )
+                if result["status"]:
+                    supabase.table("businesses").update(
+                        {
+                            "note_taking_active": True,
+                            "note_taking_subscription_id": result["subscription_id"],
+                            "note_taking_subscription_status": result[
+                                "subscription_status"
+                            ],
+                        }
+                    ).eq("admin_id", user_data["user_id"]).execute()
+                    insert_notification(
+                        user_data["user_id"],
+                        f"Note taking subscription was restarted",
+                        "payment",
+                    )
+        elif sub_type == "robot_process_automation":
+            subscription_id = (
+                supabase.table("businesses")
+                .select("robot_process_automation_subscription_id")
+                .eq("admin_id", user_data["user_id"])
+                .execute()
+            )
+            if subscription_id.data[0]["robot_process_automation_subscription_id"]:
+                result = restart_subscription(
+                    subscription_id.data[0]["robot_process_automation_subscription_id"]
+                )
+                if result["status"]:
+                    rule_arn = update_user_rule_schedule(
+                        username=user_data["username"],
+                        state="ENABLED",
+                    )
+                    if rule_arn:
+                        supabase.table("robot_process_automation_config").update(
+                            {"active": True}
+                        ).eq("admin_id", user_data["user_id"]).execute()
+                        supabase.table("businesses").update(
+                            {
+                                "robot_process_automation_active": True,
+                                "robot_process_automation_subscription_id": result[
+                                    "subscription_id"
+                                ],
+                                "robot_process_automation_subscription_status": result[
+                                    "subscription_status"
+                                ],
+                            }
+                        ).eq("admin_id", user_data["user_id"]).execute()
+
+                    insert_notification(
+                        user_data["user_id"],
+                        f"Robot process automation subscription was restarted",
+                        "payment",
+                    )
+        return (
+            jsonify(
+                {"message": "Subscription restarted successfully", "status": "success"}
+            ),
+            200,
+        )
+    except Exception as e:
+        logging.error(f"Error in POST api/admin/payment/restart-subscription: {str(e)}")
         return jsonify({"error": str(e), "status": "error"}), 500
 
 

@@ -85,6 +85,55 @@ def create_subscription(customer_id, price_id, quantity=1):
         return e
 
 
+def restart_subscription(subscription_id):
+    try:
+        subscription = stripe.Subscription.retrieve(subscription_id)
+        # print(subscription, "subscription")
+        if subscription.status == "active" and subscription.cancel_at_period_end:
+            # Resume by unsetting cancel_at_period_end
+            updated_sub = stripe.Subscription.modify(
+                subscription_id,
+                cancel_at_period_end=False,
+                proration_behavior="create_prorations",
+            )
+            logging.info(f"Subscription {subscription_id} resumed.")
+            return {
+                "status": True,
+                "subscription_id": updated_sub["id"],
+                "subscription_status": updated_sub["status"],
+            }
+        elif subscription.status == "canceled":
+            # Create a new subscription with similar details
+            print(subscription, "subscription")
+            customer_id = subscription["customer"]
+            items = [
+                {"price": item["price"]["id"], "quantity": item["quantity"]}
+                for item in subscription["items"]["data"]
+            ]
+            print(items, "items")
+            new_sub = stripe.Subscription.create(
+                customer=customer_id,
+                items=items,
+                proration_behavior="create_prorations",
+                # Optionally add billing_cycle_anchor or other params if needed
+            )
+            logging.info(
+                f"New subscription {new_sub['id']} created to restart canceled {subscription_id}."
+            )
+            return {
+                "status": True,
+                "subscription_id": new_sub["id"],
+                "subscription_status": new_sub["status"],
+            }
+        else:
+            raise ValueError(
+                f"Subscription {subscription_id} cannot be restarted (status: {subscription.status})."
+            )
+    except Exception as e:
+        print(e)
+        return e
+
+
 def update_subscription(subscription_id):
     try:
         subscription = stripe.Subscription.retrieve(subscription_id)
