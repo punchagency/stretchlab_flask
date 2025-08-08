@@ -70,7 +70,6 @@ def invite_user(token):
             payment_method = retrieve_payment_method(
                 check_subscription.data[0]["payment_id"]
             )
-            print(payment_method, "payment_method")
             paymentinfo = {
                 "brand": payment_method.card.brand,
                 "last4": payment_method.card.last4,
@@ -315,7 +314,6 @@ def validate_login(token):
         data = request.get_json()
 
         validate_login = clubready_admin_login(data)
-        print(user_data["user_id"], "user info")
         if validate_login["status"]:
             supabase.table("users").update(
                 {
@@ -396,7 +394,6 @@ def save_robot_config(token):
             payment_method = retrieve_payment_method(
                 check_subscription.data[0]["payment_id"]
             )
-            print(payment_method, "payment_method")
             paymentinfo = {
                 "brand": payment_method.card.brand,
                 "last4": payment_method.card.last4,
@@ -424,7 +421,6 @@ def save_robot_config(token):
             role_arn="arn:aws:iam::886351739165:role/service-role/Amazon_EventBridge_Invoke_ECS_2143115626",
             bucket_name=bucket_name,
         )
-        print(rule_arn, "rule_arn")
         config = (
             supabase.table("robot_process_automation_config")
             .insert(

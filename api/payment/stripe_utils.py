@@ -25,7 +25,6 @@ def create_setup_intent(customer_id):
             customer=customer_id,
             automatic_payment_methods={"enabled": True},
         )
-        print(setup_intent, "setup_intent")
         return setup_intent
     except Exception as e:
         print(e)
@@ -104,13 +103,11 @@ def restart_subscription(subscription_id):
             }
         elif subscription.status == "canceled":
             # Create a new subscription with similar details
-            print(subscription, "subscription")
             customer_id = subscription["customer"]
             items = [
                 {"price": item["price"]["id"], "quantity": item["quantity"]}
                 for item in subscription["items"]["data"]
             ]
-            print(items, "items")
             new_sub = stripe.Subscription.create(
                 customer=customer_id,
                 items=items,

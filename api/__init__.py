@@ -35,9 +35,7 @@ def create_app():
 
     try:
         app.config["SQLALCHEMY_ENGINE"] = create_engine(os.environ.get("DATABASE_URL"))
-        print("Successfully initialized SQLAlchemy engine for migrations")
     except Exception as e:
-        print(f"Failed to initialize SQLAlchemy engine: {str(e)}")
         raise RuntimeError(f"Database connection failed: {str(e)}")
 
     try:
@@ -45,9 +43,7 @@ def create_app():
             app.config["SUPABASE_URL"], app.config["SUPABASE_KEY"]
         )
         app.config["SUPABASE"] = supabase
-        print("Successfully connected to Supabase API")
     except Exception as e:
-        print(f"Failed to initialize Supabase client: {str(e)}")
         raise RuntimeError(f"Supabase client initialization failed: {str(e)}")
 
     if not app.debug:

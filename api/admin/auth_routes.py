@@ -47,7 +47,6 @@ def login():
                 "maxlength": 120,
             },
         }
-        print("loggin details", request.get_json())
         data = validate_request(request.get_json(), schema)
 
         user = (

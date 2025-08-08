@@ -371,7 +371,6 @@ def get_questions(token, booking_id):
             .eq("type", "user")
             .execute()
         )
-        print(notes.data)
         get_booking = (
             supabase.table("clubready_bookings")
             .select("*")

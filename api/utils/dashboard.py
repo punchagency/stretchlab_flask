@@ -16,7 +16,7 @@ def get_start_and_end_date(duration, start_date_str=None, end_date_str=None):
         current_date = datetime.now()
         start_date = current_date.replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
-        )
+        ) + timedelta(days=1)
         _, last_day_of_month = monthrange(current_date.year, current_date.month)
 
         end_date = current_date.replace(
@@ -30,7 +30,7 @@ def get_start_and_end_date(duration, start_date_str=None, end_date_str=None):
         last_day_last_month = first_day_this_month - timedelta(days=1)
         start_date = last_day_last_month.replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
-        )
+        ) + timedelta(days=1)
         end_date = last_day_last_month.replace(
             hour=23, minute=59, second=59, microsecond=999999
         ) + timedelta(days=1)
@@ -39,20 +39,20 @@ def get_start_and_end_date(duration, start_date_str=None, end_date_str=None):
         end_date = (current_date - timedelta(days=1)).replace(
             hour=23, minute=59, second=59, microsecond=999999
         ) + timedelta(days=1)
-        start_date = (end_date - timedelta(days=29)).replace(
+        start_date = (end_date - timedelta(days=30)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
     elif duration == "last_7_days":
         current_date = datetime.now()
 
         # INFO - Exclude today: end_date is yesterday (end of day), start_date is 6 days before yesterday (start of day)
-        yesterday = (current_date - timedelta(days=1)).replace(
+        end_date = (current_date).replace(
             hour=23, minute=59, second=59, microsecond=999999
         )
-        start_date = (yesterday - timedelta(days=6)).replace(
+        start_date = (end_date - timedelta(days=6)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
-        end_date = yesterday + timedelta(days=1)
+
     # elif duration == "yesterday":
     #     current_date = datetime.now()
 
@@ -127,7 +127,7 @@ def handle_total_visits(duration, total_visits, start_date=None, end_date=None):
     elif duration in ["this_month", "last_month", "last_30_days"]:
 
         daily_data = []
-        day_start = start_date
+        day_start = start_date - timedelta(days=1)
 
         while day_start <= end_date:
             day_end = day_start.replace(
@@ -151,6 +151,7 @@ def handle_total_visits(duration, total_visits, start_date=None, end_date=None):
         return {"data": daily_data[:-1]}
     elif duration == "last_7_days":
         daily_data = []
+        start_date = start_date - timedelta(days=1)
         days = [start_date + timedelta(days=i) for i in range(7)]
         daily_counts = {d.strftime("%a"): 0 for d in days}
 
@@ -210,11 +211,12 @@ def handle_total_visits(duration, total_visits, start_date=None, end_date=None):
 
     elif duration == "custom":
         num_days = (end_date - start_date).days + 1
+        num_days = num_days + 1
         daily_data = []
         grand_total = len(total_visits)
         if num_days <= 30:
-            current_day = start_date.date()
-            range_end = end_date.date()
+            current_day = (start_date - timedelta(days=1)).date()
+            range_end = (end_date - timedelta(days=1)).date()
             while current_day <= range_end:
                 count = 0
                 for booking in total_visits:
@@ -233,7 +235,8 @@ def handle_total_visits(duration, total_visits, start_date=None, end_date=None):
         else:
             max_points = 30
             days_per_group = math.ceil(num_days / max_points)
-            current = start_date
+            current = start_date - timedelta(days=1)
+            end_date = end_date - timedelta(days=1)
             while current < end_date:
                 group_end = min(current + timedelta(days=days_per_group), end_date)
                 count = 0
@@ -319,7 +322,7 @@ def handle_percentage_of_submitted_bookings(
 
     elif duration in ["this_month", "last_month", "last_30_days"]:
         daily_data = []
-        range_start = start_date.date()
+        range_start = (start_date - timedelta(days=1)).date()
         range_end = end_date.date()
         current_day = range_start
         # print(submitted_by_app, "submitted_by_app")
@@ -352,7 +355,7 @@ def handle_percentage_of_submitted_bookings(
 
     elif duration == "last_7_days":
         daily_data = []
-        days = [start_date + timedelta(days=i) for i in range(7)]
+        days = [(start_date - timedelta(days=1) + timedelta(days=i)) for i in range(7)]
         daily_total_counts = {d.strftime("%a"): 0 for d in days}
         daily_submitted_counts = {d.strftime("%a"): 0 for d in days}
 
@@ -441,8 +444,8 @@ def handle_percentage_of_submitted_bookings(
         num_days = (end_date - start_date).days + 1
         daily_data = []
         if num_days <= 30:
-            current_day = start_date.date()
-            range_end = end_date.date()
+            current_day = (start_date - timedelta(days=1)).date()
+            range_end = (end_date - timedelta(days=1)).date()
             while current_day <= range_end:
                 total_count = 0
                 submitted_count = 0
@@ -475,7 +478,8 @@ def handle_percentage_of_submitted_bookings(
         else:
             max_points = 30
             days_per_group = math.ceil(num_days / max_points)
-            current = start_date
+            current = start_date - timedelta(days=1)
+            end_date = end_date - timedelta(days=1)
             while current < end_date:
                 group_end = min(current + timedelta(days=days_per_group), end_date)
                 total_count = 0
@@ -571,7 +575,7 @@ def handle_avg_visit_quality_percentage(
 
         num_days = (end_date - start_date).days + 1
         for i in range(num_days):
-            day = start_date + timedelta(days=i)
+            day = start_date - timedelta(days=1) + timedelta(days=i)
             label = day.strftime("%b %d")
             day_labels.append(label)
             daily_percentages[label] = []
@@ -602,7 +606,7 @@ def handle_avg_visit_quality_percentage(
         return {"data": daily_data[:-1]}
     elif duration == "last_7_days":
         daily_data = []
-        days = [start_date + timedelta(days=i) for i in range(7)]
+        days = [(start_date - timedelta(days=1) + timedelta(days=i)) for i in range(7)]
         daily_percentages = {d.strftime("%a"): [] for d in days}
 
         for booking in all_bookings:
@@ -667,8 +671,8 @@ def handle_avg_visit_quality_percentage(
         num_days = (end_date - start_date).days + 1
         daily_data = []
         if num_days <= 30:
-            current_day = start_date.date()
-            range_end = end_date.date()
+            current_day = (start_date - timedelta(days=1)).date()
+            range_end = (end_date - timedelta(days=1)).date()
             while current_day <= range_end:
                 percentages = []
                 for booking in all_bookings:
@@ -694,7 +698,8 @@ def handle_avg_visit_quality_percentage(
         else:
             max_points = 30
             days_per_group = math.ceil(num_days / max_points)
-            current = start_date
+            current = start_date - timedelta(days=1)
+            end_date = end_date - timedelta(days=1)
             while current < end_date:
                 group_end = min(current + timedelta(days=days_per_group), end_date)
                 percentages = []
@@ -775,14 +780,13 @@ def handle_avg_aggregate_note_quality_percentage(
 
         return {"data": monthly_data}
     elif duration in ["this_month", "last_month", "last_30_days"]:
-
         daily_data = []
         day_labels = []
         daily_percentages = {}
 
         num_days = (end_date - start_date).days + 1
         for i in range(num_days):
-            day = start_date + timedelta(days=i)
+            day = start_date - timedelta(days=1) + timedelta(days=i)
             label = day.strftime("%b %d")
             day_labels.append(label)
             daily_percentages[label] = []
@@ -813,7 +817,7 @@ def handle_avg_aggregate_note_quality_percentage(
         return {"data": daily_data[:-1]}
     elif duration == "last_7_days":
         daily_data = []
-        days = [start_date + timedelta(days=i) for i in range(7)]
+        days = [(start_date - timedelta(days=1) + timedelta(days=i)) for i in range(7)]
         daily_percentages = {d.strftime("%a"): [] for d in days}
 
         for booking in all_bookings:
@@ -877,8 +881,8 @@ def handle_avg_aggregate_note_quality_percentage(
         num_days = (end_date - start_date).days + 1
         daily_data = []
         if num_days <= 30:
-            current_day = start_date.date()
-            range_end = end_date.date()
+            current_day = (start_date - timedelta(days=1)).date()
+            range_end = (end_date - timedelta(days=1)).date()
             while current_day <= range_end:
                 percentages = []
                 for booking in all_bookings:
@@ -904,7 +908,8 @@ def handle_avg_aggregate_note_quality_percentage(
         else:
             max_points = 30
             days_per_group = math.ceil(num_days / max_points)
-            current = start_date
+            current = start_date - timedelta(days=1)
+            end_date = end_date - timedelta(days=1)
             while current < end_date:
                 group_end = min(current + timedelta(days=days_per_group), end_date)
                 percentages = []

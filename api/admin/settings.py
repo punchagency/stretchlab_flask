@@ -422,7 +422,6 @@ def change_profile_picture(token):
 
         filename = secure_filename(file.filename)
         unique_filename = f"{uuid.uuid4()}_{filename}"
-        print(unique_filename)
 
         file_content = file.read()
         profile_url = save_image_to_s3(

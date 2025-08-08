@@ -9,8 +9,7 @@ def send_async_email(app, msg):
 
 
 def send_email(subject, recipients, body, html=None):
-    print("sending email")
-    print(recipients)
+
     app = current_app._get_current_object()
     msg = Message(subject=subject, recipients=recipients, body=body, html=html)
 
