@@ -134,6 +134,7 @@ def login():
                     status = send_email(
                         "2FA Verification Code",
                         [user.data[0]["email"]],
+                        None,
                         f"<html><body><p>Your 2FA verification code is {verification_code}. It will expire in 5 minutes.</p></body></html>",
                     )
                     return (
@@ -161,6 +162,7 @@ def login():
                     status = send_email(
                         "Verification Code",
                         [user.data[0]["email"]],
+                        None,
                         f"<html><body><p>Your verification code is {verification_code}. It will expire in 5 minutes.</p></body></html>",
                     )
 
@@ -369,6 +371,7 @@ def forgot_password():
         send_email(
             "Password Reset Link",
             [email],
+            None,
             f"<html><body><p>Your password reset link is <a href='https://admin.stretchnote.com/reset-password/{token}'>here</a></p></body></html>",
         )
         return (
@@ -501,7 +504,8 @@ def register():
         status = send_email(
             "Verification Code",
             [user.data[0]["email"]],
-            f"<html><body><p>Your verification code is {verification_code}</p></body></html>",
+            None,
+            f"<html><body><p>Your verification code is {verification_code}. It will expire in 20 minutes.</p></body></html>",
         )
 
         user = (
@@ -574,6 +578,7 @@ def resend_2fa_verification_code():
         send_email(
             "2FA Verification Code",
             [email],
+            None,
             f"<html><body><p>Your 2FA verification code is {verification_code}. It will expire in 5 minutes.</p></body></html>",
         )
         return (
@@ -695,6 +700,7 @@ def resend_verification_code(token):
             send_email(
                 "Verification Code",
                 [user.data[0]["email"]],
+                None,
                 f"<html><body><p>Your verification code is {verification_code}. It will expire in 20 minutes.</p></body></html>",
             )
             return (
