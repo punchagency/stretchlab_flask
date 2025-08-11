@@ -22,7 +22,12 @@ routes = Blueprint("dashboard", __name__)
 def get_bookings_info(token):
     try:
         user_data = decode_jwt_token(token)
-        user_id = user_data["user_id"]
+        user_id = (
+            supabase.table("users")
+            .select("admin_id")
+            .eq("id", user_data["user_id"])
+            .execute()
+        ).data[0]["admin_id"]
         bookings_info = None
         user = (
             supabase.table("businesses")
@@ -224,7 +229,12 @@ def get_first_row(token):
 def get_activities(token):
     try:
         user_data = decode_jwt_token(token)
-        user_id = user_data["user_id"]
+        user_id = (
+            supabase.table("users")
+            .select("admin_id")
+            .eq("id", user_data["user_id"])
+            .execute()
+        ).data[0]["admin_id"]
 
         flexologists = (
             supabase.table("users")
@@ -364,14 +374,14 @@ def get_chart_filters(token):
         if check_which_user.data[0]["role_id"] == 4:
             admin_user_id = (
                 supabase.table("users")
-                .select("id")
-                .eq("username", check_which_user.data[0]["username"])
+                .select("admin_id")
+                .eq("id", user_id)
                 .in_("role_id", [1, 2])
                 .execute()
             )
             if not admin_user_id.data:
                 return jsonify({"error": "No admin user found", "status": "error"}), 404
-            user_id = admin_user_id.data[0]["id"]
+            user_id = admin_user_id.data[0]["admin_id"]
 
         config_id = (
             supabase.table("robot_process_automation_config")
@@ -480,7 +490,12 @@ def get_chart_filters(token):
 def get_second_row(token):
     try:
         user_data = decode_jwt_token(token)
-        user_id = user_data["user_id"]
+        user_id = (
+            supabase.table("users")
+            .select("admin_id")
+            .eq("id", user_data["user_id"])
+            .execute()
+        ).data[0]["admin_id"]
         duration = request.args.get("duration", "this_year")
         location = request.args.get("location", None)
         flexologist = request.args.get("flexologist", None)
@@ -590,6 +605,7 @@ def get_second_row(token):
                         offset += limit
                 else:
                     while True:
+                        print(flexologist, "flexologist")
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
                             .select("*")
@@ -606,6 +622,7 @@ def get_second_row(token):
                         if len(data) < limit:
                             break
                         offset += limit
+            print(len(total_visits), "total_visits")
             data = handle_total_visits(duration, total_visits, start_date, end_date)
             return jsonify({"status": "success", "data": data["data"]}), 200
 
@@ -613,6 +630,7 @@ def get_second_row(token):
             all_bookings = []
             offset = 0
             limit = 1000
+            print(get_config_id.data[0]["id"], "get_config_id")
             submitted_by_app = []
             if location:
 
@@ -848,6 +866,7 @@ def get_second_row(token):
                             else 0
                         )
                         if score > 21:
+                            print("score", score)
                         percentage = round(
                             (score / (18.0 if booking["first_timer"] == "YES" else 4.0))
                             * 100,
@@ -857,6 +876,9 @@ def get_second_row(token):
                         all_bookings.append(booking)
 
                 else:
+                    print(location, "location")
+                    print(start_date, "start_date")
+                    print(end_date, "end_date")
                     while True:
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
@@ -955,6 +977,7 @@ def get_second_row(token):
                         booking["percentage"] = percentage
                         all_bookings.append(booking)
 
+            print(len(all_bookings), "all_bookings")
             data = handle_avg_visit_quality_percentage(
                 duration, all_bookings, start_date, end_date
             )
@@ -1117,7 +1140,12 @@ def get_second_row(token):
 def get_third_row(token):
     try:
         user_data = decode_jwt_token(token)
-        user_id = user_data["user_id"]
+        user_id = (
+            supabase.table("users")
+            .select("admin_id")
+            .eq("id", user_data["user_id"])
+            .execute()
+        ).data[0]["admin_id"]
         timezone_header = request.headers.get("X-Client-Timezone")
         today_date = datetime.now(timezone_header).strftime("%Y-%m-%d")
         flexologists = (
@@ -1176,7 +1204,7 @@ def get_fourth_row(token):
         if not get_user_info.data:
             return jsonify({"error": "User not found", "status": "error"}), 404
 
-        if get_user_info.data[0]["role_id"] not in [1, 2]:
+        if get_user_info.data[0]["role_id"] not in [1, 2, 4]:
             return jsonify({"error": "Unauthorized", "status": "error"}), 401
 
         businesses_info = supabase.table("businesses").select("*").execute()
@@ -1251,7 +1279,7 @@ def get_business_info(token):
             supabase.table("users").select("*").eq("id", user_id).execute()
         )
 
-        if check_user_role.data[0]["role_id"] not in [1, 2]:
+        if check_user_role.data[0]["role_id"] not in [1]:
             return jsonify({"error": "Unauthorized", "status": "error"}), 401
 
         get_business_info = (

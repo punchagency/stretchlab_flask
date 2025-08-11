@@ -27,12 +27,11 @@ routes = Blueprint("admin", __name__)
 def invite_user(token):
     try:
         user_data = decode_jwt_token(token)
-        frontend_url = request.headers.get("Origin")
         check_user_exists_and_is_admin = (
             supabase.table("users")
             .select("*, roles(name)")
             .eq("id", user_data["user_id"])
-            .in_("role_id", [1, 2])
+            .in_("role_id", [1, 2, 4])
             .execute()
         )
         if not check_user_exists_and_is_admin.data:
@@ -43,7 +42,7 @@ def invite_user(token):
         check_subscription = (
             supabase.table("businesses")
             .select("payment_id,note_taking_subscription_id")
-            .eq("admin_id", user_data["user_id"])
+            .eq("username", check_user_exists_and_is_admin.data[0]["username"])
             .execute()
         )
         if (
@@ -70,6 +69,7 @@ def invite_user(token):
             payment_method = retrieve_payment_method(
                 check_subscription.data[0]["payment_id"]
             )
+            print(payment_method, "payment_method")
             paymentinfo = {
                 "brand": payment_method.card.brand,
                 "last4": payment_method.card.last4,
@@ -192,19 +192,14 @@ def invite_user(token):
                     "email": email.lower(),
                     "status": 3,
                     "role_id": 3,
-                    "username": user_data["username"],
-                    "admin_id": user_data["user_id"],
+                    "username": check_user_exists_and_is_admin.data[0]["username"],
+                    "admin_id": check_user_exists_and_is_admin.data[0]["admin_id"],
                     "password": hashed_password,
                     "invited_at": datetime.now().isoformat(),
                 }
             )
             .execute()
         )
-        supabase.table("businesses").update(
-            {
-                "note_taking_active": True,
-            }
-        ).eq("admin_id", user_data["user_id"]).execute()
         new_user = new_user.data[0]
         if new_user:
             status = send_email(
@@ -314,6 +309,7 @@ def validate_login(token):
         data = request.get_json()
 
         validate_login = clubready_admin_login(data)
+        print(user_data["user_id"], "user info")
         if validate_login["status"]:
             supabase.table("users").update(
                 {
@@ -371,6 +367,7 @@ def save_robot_config(token):
             .eq("admin_id", user_data["user_id"])
             .execute()
         )
+        print(check_user_exists_and_is_admin.data[0])
         if (
             not check_subscription.data[0]["payment_id"]
             and check_user_exists_and_is_admin.data[0]["role_id"] != 1
@@ -394,6 +391,7 @@ def save_robot_config(token):
             payment_method = retrieve_payment_method(
                 check_subscription.data[0]["payment_id"]
             )
+            print(payment_method, "payment_method")
             paymentinfo = {
                 "brand": payment_method.card.brand,
                 "last4": payment_method.card.last4,
@@ -421,6 +419,7 @@ def save_robot_config(token):
             role_arn="arn:aws:iam::886351739165:role/service-role/Amazon_EventBridge_Invoke_ECS_2143115626",
             bucket_name=bucket_name,
         )
+        print(rule_arn, "rule_arn")
         config = (
             supabase.table("robot_process_automation_config")
             .insert(
@@ -550,6 +549,7 @@ def get_robot_config(token):
                 .eq("admin_id", user_data["user_id"])
                 .execute()
             )
+            print(get_rpa_sub_status.data[0], "get_rpa_sub_status")
             password = reverse_hash_credentials(
                 robot_config.data[0]["users"]["clubready_username"],
                 robot_config.data[0]["users"]["clubready_password"],

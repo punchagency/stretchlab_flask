@@ -47,6 +47,7 @@ def login():
                 "maxlength": 120,
             },
         }
+        print("loggin details", request.get_json())
         data = validate_request(request.get_json(), schema)
 
         user = (
@@ -55,6 +56,7 @@ def login():
             .eq("email", data["email"].lower())
             .execute()
         )
+        print(user.data[0])
         if len(user.data) == 0:
             return (
                 jsonify(
@@ -75,6 +77,36 @@ def login():
                 ),
                 400,
             )
+
+        if user.data[0]["status"] == 2:
+            return (
+                jsonify(
+                    {
+                        "message": "Your account is disabled, please contact support",
+                        "status": "error",
+                    }
+                ),
+                400,
+            )
+
+        if user.data[0]["password"] == "empty" and user.data[0]["role_id"] == 4:
+            jwt_email = jwt.encode(
+                {"email": data["email"].lower()},
+                os.environ.get("JWT_SECRET_KEY"),
+                algorithm="HS256",
+            )
+
+            return (
+                jsonify(
+                    {
+                        "message": "Please set your password",
+                        "status": "error",
+                        "requires_password": True,
+                        "url": f"https://admin.stretchnote.com/invitation?email={jwt_email}",
+                    }
+                ),
+                400,
+            )
         role_name = (
             user.data[0]["roles"]["name"]
             if user.data and user.data[0]["roles"]
@@ -84,7 +116,7 @@ def login():
             get_business_details = (
                 supabase.table("businesses")
                 .select("*")
-                .eq("admin_id", user.data[0]["id"])
+                .eq("admin_id", user.data[0]["admin_id"])
                 .execute()
             )
             if verify_password(data["password"], user.data[0]["password"]):
@@ -102,7 +134,7 @@ def login():
                     status = send_email(
                         "2FA Verification Code",
                         [user.data[0]["email"]],
-                        f"Your 2FA verification code is {verification_code}",
+                        f"<html><body><p>Your 2FA verification code is {verification_code}. It will expire in 5 minutes.</p></body></html>",
                     )
                     return (
                         jsonify(
@@ -129,7 +161,7 @@ def login():
                     status = send_email(
                         "Verification Code",
                         [user.data[0]["email"]],
-                        f"Your verification code is {verification_code} and it will expire in 5 minutes",
+                        f"<html><body><p>Your verification code is {verification_code}. It will expire in 5 minutes.</p></body></html>",
                     )
 
                 token = jwt.encode(
@@ -322,7 +354,7 @@ def forgot_password():
     try:
         data = request.get_json()
         email = data.get("email")
-        frontend_url = os.environ.get("ADMIN_FRONTEND_URL")
+        # frontend_url = os.environ.get("ADMIN_FRONTEND_URL")
         user = supabase.table("users").select("*").eq("email", email.lower()).execute()
         if len(user.data) == 0:
             return jsonify({"message": "User does not exist", "status": "error"}), 404
@@ -337,7 +369,7 @@ def forgot_password():
         send_email(
             "Password Reset Link",
             [email],
-            f"Your password reset link is {frontend_url}/reset-password/{token}",
+            f"<html><body><p>Your password reset link is <a href='https://admin.stretchnote.com/reset-password/{token}'>here</a></p></body></html>",
         )
         return (
             jsonify(
@@ -359,6 +391,7 @@ def reset_password():
     try:
         data = request.get_json()
         token = data.get("token")
+        print(token)
         password = data.get("password")
         user_data = decode_jwt_token(token)
         user = (
@@ -379,7 +412,7 @@ def reset_password():
         if len(updated_user.data) == 0:
             return jsonify({"message": "Password reset failed", "status": "error"}), 400
         insert_notification(
-            user_data["user_id"],
+            updated_user.data[0]["id"],
             f"Your password was reset",
             "others",
         )
@@ -468,7 +501,7 @@ def register():
         status = send_email(
             "Verification Code",
             [user.data[0]["email"]],
-            f"Your verification code is {verification_code}",
+            f"<html><body><p>Your verification code is {verification_code}</p></body></html>",
         )
 
         user = (
@@ -541,7 +574,7 @@ def resend_2fa_verification_code():
         send_email(
             "2FA Verification Code",
             [email],
-            f"Your 2FA verification code is {verification_code}",
+            f"<html><body><p>Your 2FA verification code is {verification_code}. It will expire in 5 minutes.</p></body></html>",
         )
         return (
             jsonify(
@@ -662,7 +695,7 @@ def resend_verification_code(token):
             send_email(
                 "Verification Code",
                 [user.data[0]["email"]],
-                f"Your verification code is {verification_code}",
+                f"<html><body><p>Your verification code is {verification_code}. It will expire in 20 minutes.</p></body></html>",
             )
             return (
                 jsonify(

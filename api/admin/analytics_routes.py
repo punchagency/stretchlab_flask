@@ -18,7 +18,12 @@ def rpa_audit(token):
         location = request.args.get("location")
         filter_metric = request.args.get("filter_metric")
         flexologist_name = request.args.get("flexologist_name")
-        user_id = user_data["user_id"]
+        user_id = (
+            supabase.table("users")
+            .select("admin_id")
+            .eq("id", user_data["user_id"])
+            .execute()
+        ).data[0]["admin_id"]
 
         if not duration:
             return jsonify({"error": "Duration is required", "status": "error"}), 400
@@ -94,6 +99,7 @@ def rpa_audit(token):
                 offset += limit
 
         if location and not flexologist_name:
+            print(start_date, end_date, "start_date, end_date")
 
             while True:
                 if filter_bookings:
@@ -408,7 +414,12 @@ def rpa_audit(token):
 def get_rpa_audit_details(token):
     try:
         user_data = decode_jwt_token(token)
-        user_id = user_data["user_id"]
+        user_id = (
+            supabase.table("users")
+            .select("admin_id")
+            .eq("id", user_data["user_id"])
+            .execute()
+        ).data[0]["admin_id"]
         data = request.json
         opportunity = data["opportunity"]
         duration = data["duration"]
@@ -665,7 +676,12 @@ def get_rpa_audit_details(token):
 def get_ranking_analytics(token):
     try:
         user_data = decode_jwt_token(token)
-        user_id = user_data["user_id"]
+        user_id = (
+            supabase.table("users")
+            .select("admin_id")
+            .eq("id", user_data["user_id"])
+            .execute()
+        ).data[0]["admin_id"]
         data = request.json
         # rank_by = data.get("rank_by", "location")
         metric = data.get("metric", "total_visits")
@@ -1191,7 +1207,12 @@ def get_ranking_analytics(token):
 def get_location_analytics(token):
     try:
         user_data = decode_jwt_token(token)
-        user_id = user_data["user_id"]
+        user_id = (
+            supabase.table("users")
+            .select("admin_id")
+            .eq("id", user_data["user_id"])
+            .execute()
+        ).data[0]["admin_id"]
         data = request.json
         # rank_by = data.get("rank_by", "location")
         location = data.get("location", None)
@@ -1311,6 +1332,7 @@ def get_location_analytics(token):
             )
 
         if metric == "percentage_app_submission":
+            print(start_date - timedelta(days=1), end_date - timedelta(days=1))
             offset = 0
             limit = 1000
             all_notes = []
@@ -1452,6 +1474,7 @@ def get_location_analytics(token):
 
         if first or subsequent:
             first_timer = "YES" if first else "NO"
+            print(start_date, end_date, location, "start_date, end_date")
             offset = 0
             limit = 1000
             all_notes = []
