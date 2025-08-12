@@ -413,13 +413,38 @@ def save_robot_config(token):
                 402,
             )
 
+        get_price = (
+            supabase.table("prices").select("price_id").eq("type", "robot").execute()
+        )
+        check_if_robot_exists = (
+            supabase.table("robot_process_automation_config")
+            .select("*")
+            .eq("name", f"{user_data['username']}-robot")
+            .execute()
+        )
+        if check_if_robot_exists.data:
+            return (
+                jsonify({"message": "Robot already exists", "status": "error"}),
+                400,
+            )
+
+        subscription = create_subscription(
+            check_subscription.data[0]["customer_id"],
+            get_price.data[0]["price_id"],
+            quantity=data["numberOfStudioLocations"],
+        )
+        if subscription["success"] == False:
+            return (
+                jsonify({"message": "Subscription failed", "status": "error"}),
+                400,
+            )
+
         bucket_name = create_s3_bucket(user_data["username"], user_data["user_id"])
         rule_arn = create_user_rule(
             username=user_data["username"],
             role_arn="arn:aws:iam::886351739165:role/service-role/Amazon_EventBridge_Invoke_ECS_2143115626",
             bucket_name=bucket_name,
         )
-        print(rule_arn, "rule_arn")
         config = (
             supabase.table("robot_process_automation_config")
             .insert(
@@ -446,12 +471,7 @@ def save_robot_config(token):
                     "locations": json.dumps(data["studioLocations"]),
                 }
             ).eq("admin_id", user_data["user_id"]).execute()
-            get_price = (
-                supabase.table("prices")
-                .select("price_id")
-                .eq("type", "robot")
-                .execute()
-            )
+
             if check_user_exists_and_is_admin.data[0]["role_id"] == 1:
                 supabase.table("users").update(
                     {
@@ -473,11 +493,6 @@ def save_robot_config(token):
                     200,
                 )
 
-            subscription = create_subscription(
-                check_subscription.data[0]["customer_id"],
-                get_price.data[0]["price_id"],
-                quantity=data["numberOfStudioLocations"],
-            )
             supabase.table("businesses").update(
                 {
                     "robot_process_automation_subscription_id": subscription[

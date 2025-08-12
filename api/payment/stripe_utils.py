@@ -78,6 +78,7 @@ def create_subscription(customer_id, price_id, quantity=1):
         return {
             "subscription_id": subscription.id,
             "status": subscription.status,
+            "success": True,
         }
     except Exception as e:
         print(e, "error in create_subscription")

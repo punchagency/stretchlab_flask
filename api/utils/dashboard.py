@@ -8,20 +8,34 @@ def get_start_and_end_date(duration, start_date_str=None, end_date_str=None):
     end_date = None
 
     if duration == "this_year":
-        start_date = datetime.now().replace(day=1, month=1, year=datetime.now().year)
+        start_date = datetime.now().replace(
+            day=1,
+            month=1,
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+            year=datetime.now().year,
+        )
         end_date = datetime.now().replace(
-            day=31, month=12, year=datetime.now().year
-        ) + timedelta(days=1)
+            day=31,
+            month=12,
+            hour=23,
+            minute=59,
+            second=59,
+            microsecond=999999,
+            year=datetime.now().year,
+        )
     elif duration == "this_month":
         current_date = datetime.now()
         start_date = current_date.replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
-        ) + timedelta(days=1)
+        )
         _, last_day_of_month = monthrange(current_date.year, current_date.month)
 
         end_date = current_date.replace(
             day=last_day_of_month, hour=23, minute=59, second=59, microsecond=999999
-        ) + timedelta(days=1)
+        )
     elif duration == "last_month":
         current_date = datetime.now()
         first_day_this_month = current_date.replace(
@@ -30,15 +44,15 @@ def get_start_and_end_date(duration, start_date_str=None, end_date_str=None):
         last_day_last_month = first_day_this_month - timedelta(days=1)
         start_date = last_day_last_month.replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
-        ) + timedelta(days=1)
+        )
         end_date = last_day_last_month.replace(
             hour=23, minute=59, second=59, microsecond=999999
-        ) + timedelta(days=1)
+        )
     elif duration == "last_30_days":
         current_date = datetime.now()
         end_date = (current_date - timedelta(days=1)).replace(
             hour=23, minute=59, second=59, microsecond=999999
-        ) + timedelta(days=1)
+        )
         start_date = (end_date - timedelta(days=30)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
@@ -46,7 +60,7 @@ def get_start_and_end_date(duration, start_date_str=None, end_date_str=None):
         current_date = datetime.now()
 
         # INFO - Exclude today: end_date is yesterday (end of day), start_date is 6 days before yesterday (start of day)
-        end_date = (current_date).replace(
+        end_date = (current_date - timedelta(days=1)).replace(
             hour=23, minute=59, second=59, microsecond=999999
         )
         start_date = (end_date - timedelta(days=6)).replace(
@@ -65,8 +79,10 @@ def get_start_and_end_date(duration, start_date_str=None, end_date_str=None):
     elif duration == "yesterday":
         current_date = datetime.now()
 
-        start_date = (current_date).replace(hour=0, minute=0, second=0, microsecond=0)
-        end_date = (current_date).replace(
+        start_date = (current_date - timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        end_date = (current_date - timedelta(days=1)).replace(
             hour=23, minute=59, second=59, microsecond=999999
         )
 
@@ -106,9 +122,9 @@ def handle_total_visits(duration, total_visits, start_date=None, end_date=None):
         #         all_bookings.extend(visit_data)
         monthly_counts = {}
         for booking in total_visits:
-            sanitized_date = booking["appointment_date"].replace(",", "")
-            booking_date = datetime.strptime(sanitized_date, "%A %B %d %I:%M %p")
-            booking_date = booking_date.replace(year=start_date.year)
+            booking_date = datetime.strptime(
+                booking["appointment_date"], "%Y-%m-%d %H:%M:%S.%f"
+            )
             month = booking_date.month
             if month not in monthly_counts:
                 monthly_counts[month] = 0
@@ -127,7 +143,7 @@ def handle_total_visits(duration, total_visits, start_date=None, end_date=None):
     elif duration in ["this_month", "last_month", "last_30_days"]:
 
         daily_data = []
-        day_start = start_date - timedelta(days=1)
+        day_start = start_date
 
         while day_start <= end_date:
             day_end = day_start.replace(
@@ -136,9 +152,9 @@ def handle_total_visits(duration, total_visits, start_date=None, end_date=None):
 
             count = 0
             for booking in total_visits:
-                sanitized_date = booking["appointment_date"].replace(",", "")
-                booking_date = datetime.strptime(sanitized_date, "%A %B %d %I:%M %p")
-                booking_date = booking_date.replace(year=day_start.year)
+                booking_date = datetime.strptime(
+                    booking["appointment_date"], "%Y-%m-%d %H:%M:%S.%f"
+                )
                 if day_start <= booking_date <= day_end:
                     count += 1
 
@@ -151,14 +167,14 @@ def handle_total_visits(duration, total_visits, start_date=None, end_date=None):
         return {"data": daily_data[:-1]}
     elif duration == "last_7_days":
         daily_data = []
-        start_date = start_date - timedelta(days=1)
+        # start_date = start_date
         days = [start_date + timedelta(days=i) for i in range(7)]
         daily_counts = {d.strftime("%a"): 0 for d in days}
 
         for booking in total_visits:
-            sanitized_date = booking["appointment_date"].replace(",", "")
-            booking_date = datetime.strptime(sanitized_date, "%A %B %d %I:%M %p")
-            booking_date = booking_date.replace(year=start_date.year)
+            booking_date = datetime.strptime(
+                booking["appointment_date"], "%Y-%m-%d %H:%M:%S.%f"
+            )
             for d in days:
                 if d.date() == booking_date.date():
                     day_label = d.strftime("%a")
@@ -187,9 +203,7 @@ def handle_total_visits(duration, total_visits, start_date=None, end_date=None):
             if not booking_time_str:
                 continue
             try:
-                time_str = booking_time_str.replace(",", "")
-                time_obj = datetime.strptime(time_str, "%A %B %d %I:%M %p")
-                time_obj = time_obj.replace(year=start_date.year)
+                time_obj = datetime.strptime(booking_time_str, "%Y-%m-%d %H:%M:%S.%f")
 
                 hour = time_obj.hour
                 if 6 <= hour <= 21:
@@ -215,14 +229,14 @@ def handle_total_visits(duration, total_visits, start_date=None, end_date=None):
         daily_data = []
         grand_total = len(total_visits)
         if num_days <= 30:
-            current_day = (start_date - timedelta(days=1)).date()
-            range_end = (end_date - timedelta(days=1)).date()
+            current_day = start_date.date()
+            range_end = end_date.date()
             while current_day <= range_end:
                 count = 0
                 for booking in total_visits:
-                    sanitized_date = booking["appointment_date"].replace(",", "")
-                    date_obj = datetime.strptime(sanitized_date, "%A %B %d %I:%M %p")
-                    date_obj = date_obj.replace(year=current_day.year)
+                    date_obj = datetime.strptime(
+                        booking["appointment_date"], "%Y-%m-%d %H:%M:%S.%f"
+                    )
                     booking_date = date_obj.date()
                     if booking_date == current_day:
                         count += 1
@@ -235,8 +249,8 @@ def handle_total_visits(duration, total_visits, start_date=None, end_date=None):
         else:
             max_points = 30
             days_per_group = math.ceil(num_days / max_points)
-            current = start_date - timedelta(days=1)
-            end_date = end_date - timedelta(days=1)
+            current = start_date
+            end_date = end_date
             while current < end_date:
                 group_end = min(current + timedelta(days=days_per_group), end_date)
                 count = 0
@@ -245,11 +259,9 @@ def handle_total_visits(duration, total_visits, start_date=None, end_date=None):
                 for d in range((group_end_date - group_start_date).days + 1):
                     day = group_start_date + timedelta(days=d)
                     for booking in total_visits:
-                        sanitized_date = booking["appointment_date"].replace(",", "")
                         date_obj = datetime.strptime(
-                            sanitized_date, "%A %B %d %I:%M %p"
+                            booking["appointment_date"], "%Y-%m-%d %H:%M:%S.%f"
                         )
-                        date_obj = date_obj.replace(year=day.year)
                         booking_date = date_obj.date()
                         if booking_date == day:
                             count += 1
@@ -268,6 +280,7 @@ def handle_total_visits(duration, total_visits, start_date=None, end_date=None):
 def handle_percentage_of_submitted_bookings(
     duration, all_bookings, submitted_by_app, start_date=None, end_date=None
 ):
+
     if duration == "this_year":
         monthly_data = []
         month_names = [
@@ -289,9 +302,9 @@ def handle_percentage_of_submitted_bookings(
         monthly_submitted_counts = {}
 
         for booking in all_bookings:
-            sanitized_date = booking["appointment_date"].replace(",", "")
-            date_obj = datetime.strptime(sanitized_date, "%A %B %d %I:%M %p")
-            booking_date = date_obj.replace(year=start_date.year)
+            date_obj = datetime.strptime(
+                booking["appointment_date"], "%Y-%m-%d %H:%M:%S.%f"
+            )
             month = booking_date.month
             if month not in monthly_total_counts:
                 monthly_total_counts[month] = 0
@@ -322,17 +335,17 @@ def handle_percentage_of_submitted_bookings(
 
     elif duration in ["this_month", "last_month", "last_30_days"]:
         daily_data = []
-        range_start = (start_date - timedelta(days=1)).date()
+        range_start = start_date.date()
         range_end = end_date.date()
         current_day = range_start
-        # print(submitted_by_app, "submitted_by_app")
+
         while current_day <= range_end:
             total_count = 0
             submitted_count = 0
             for booking in all_bookings:
-                sanitized_date = booking["appointment_date"].replace(",", "")
-                date_obj = datetime.strptime(sanitized_date, "%A %B %d %I:%M %p")
-                date_obj = date_obj.replace(year=current_day.year)
+                date_obj = datetime.strptime(
+                    booking["appointment_date"], "%Y-%m-%d %H:%M:%S.%f"
+                )
                 booking_date = date_obj.date()
                 if booking_date == current_day:
                     total_count += 1
@@ -355,14 +368,14 @@ def handle_percentage_of_submitted_bookings(
 
     elif duration == "last_7_days":
         daily_data = []
-        days = [(start_date - timedelta(days=1) + timedelta(days=i)) for i in range(7)]
+        days = [(start_date + timedelta(days=i)) for i in range(7)]
         daily_total_counts = {d.strftime("%a"): 0 for d in days}
         daily_submitted_counts = {d.strftime("%a"): 0 for d in days}
 
         for booking in all_bookings:
-            sanitized_date = booking["appointment_date"].replace(",", "")
-            date_obj = datetime.strptime(sanitized_date, "%A %B %d %I:%M %p")
-            date_obj = date_obj.replace(year=start_date.year)
+            date_obj = datetime.strptime(
+                booking["appointment_date"], "%Y-%m-%d %H:%M:%S.%f"
+            )
             booking_date = date_obj
             for d in days:
                 if d.date() == booking_date.date():
@@ -398,12 +411,11 @@ def handle_percentage_of_submitted_bookings(
 
         for booking in all_bookings:
             booking_time_str = booking.get("appointment_date")
+
             if not booking_time_str:
                 continue
             try:
-                time_str = booking_time_str.replace(",", "")
-                time_obj = datetime.strptime(time_str, "%A %B %d %I:%M %p")
-                time_obj = time_obj.replace(year=start_date.year)
+                time_obj = datetime.strptime(booking_time_str, "%Y-%m-%d %H:%M:%S.%f")
                 hour = time_obj.hour
                 if 6 <= hour <= 21:
                     hour_total_counts[hour] += 1
@@ -411,13 +423,24 @@ def handle_percentage_of_submitted_bookings(
                 continue
 
         for booking in submitted_by_app:
-            booking_time_str = booking.get("appointment_date")
+            booking_time_str = booking.get("booking_time")
             if not booking_time_str:
                 continue
+
             try:
-                time_str = booking_time_str.replace(",", "")
-                time_obj = datetime.strptime(time_str, "%A %B %d %I:%M %p")
-                time_obj = time_obj.replace(year=start_date.year)
+                time_obj = datetime.strptime(booking_time_str, "%I:%M %p")
+                today = datetime.now().date()
+                booking_datetime = datetime.combine(today, time_obj.time())
+                booking_time_formatted = booking_datetime.strftime(
+                    "%Y-%m-%d %H:%M:%S.%f"
+                )
+                time_obj = datetime.strptime(
+                    booking_time_formatted, "%Y-%m-%d %H:%M:%S.%f"
+                )
+            except Exception:
+                continue
+
+            try:
                 hour = time_obj.hour
                 if 6 <= hour <= 21:
                     hour_submitted_counts[hour] += 1
@@ -444,15 +467,15 @@ def handle_percentage_of_submitted_bookings(
         num_days = (end_date - start_date).days + 1
         daily_data = []
         if num_days <= 30:
-            current_day = (start_date - timedelta(days=1)).date()
-            range_end = (end_date - timedelta(days=1)).date()
+            current_day = start_date.date()
+            range_end = end_date.date()
             while current_day <= range_end:
                 total_count = 0
                 submitted_count = 0
                 for booking in all_bookings:
-                    sanitized_date = booking["appointment_date"].replace(",", "")
-                    date_obj = datetime.strptime(sanitized_date, "%A %B %d %I:%M %p")
-                    date_obj = date_obj.replace(year=current_day.year)
+                    date_obj = datetime.strptime(
+                        booking["appointment_date"], "%Y-%m-%d %H:%M:%S.%f"
+                    )
                     booking_date = date_obj.date()
                     if booking_date == current_day:
                         total_count += 1
@@ -478,8 +501,8 @@ def handle_percentage_of_submitted_bookings(
         else:
             max_points = 30
             days_per_group = math.ceil(num_days / max_points)
-            current = start_date - timedelta(days=1)
-            end_date = end_date - timedelta(days=1)
+            current = start_date
+            end_date = end_date
             while current < end_date:
                 group_end = min(current + timedelta(days=days_per_group), end_date)
                 total_count = 0
@@ -491,11 +514,9 @@ def handle_percentage_of_submitted_bookings(
                 for d in range((group_end_date - group_start_date).days + 1):
                     day = group_start_date + timedelta(days=d)
                     for booking in all_bookings:
-                        sanitized_date = booking["appointment_date"].replace(",", "")
                         date_obj = datetime.strptime(
-                            sanitized_date, "%A %B %d %I:%M %p"
+                            booking["appointment_date"], "%Y-%m-%d %H:%M:%S.%f"
                         )
-                        date_obj = date_obj.replace(year=day.year)
                         booking_date = date_obj.date()
                         if booking_date == day:
                             total_count += 1
@@ -549,9 +570,9 @@ def handle_avg_visit_quality_percentage(
         monthly_counts = {}
 
         for booking in all_bookings:
-            sanitized_date = booking["appointment_date"].replace(",", "")
-            booking_date = datetime.strptime(sanitized_date, "%A %B %d %I:%M %p")
-            booking_date = booking_date.replace(year=start_date.year)
+            booking_date = datetime.strptime(
+                booking["appointment_date"], "%Y-%m-%d %H:%M:%S.%f"
+            )
             month = booking_date.month
             if month not in monthly_percentages:
                 monthly_percentages[month] = []
@@ -575,16 +596,16 @@ def handle_avg_visit_quality_percentage(
 
         num_days = (end_date - start_date).days + 1
         for i in range(num_days):
-            day = start_date - timedelta(days=1) + timedelta(days=i)
+            day = start_date + timedelta(days=i)
             label = day.strftime("%b %d")
             day_labels.append(label)
             daily_percentages[label] = []
 
         for booking in all_bookings:
             try:
-                sanitized_date = booking["appointment_date"].replace(",", "")
-                booking_date = datetime.strptime(sanitized_date, "%A %B %d %I:%M %p")
-                booking_date = booking_date.replace(year=start_date.year)
+                booking_date = datetime.strptime(
+                    booking["appointment_date"], "%Y-%m-%d %H:%M:%S.%f"
+                )
                 label = booking_date.strftime("%b %d")
                 if label in daily_percentages:
                     percentage = float(booking.get("percentage", 0))
@@ -606,13 +627,13 @@ def handle_avg_visit_quality_percentage(
         return {"data": daily_data[:-1]}
     elif duration == "last_7_days":
         daily_data = []
-        days = [(start_date - timedelta(days=1) + timedelta(days=i)) for i in range(7)]
+        days = [(start_date + timedelta(days=i)) for i in range(7)]
         daily_percentages = {d.strftime("%a"): [] for d in days}
 
         for booking in all_bookings:
-            sanitized_date = booking["appointment_date"].replace(",", "")
-            booking_date = datetime.strptime(sanitized_date, "%A %B %d %I:%M %p")
-            booking_date = booking_date.replace(year=start_date.year)
+            booking_date = datetime.strptime(
+                booking["appointment_date"], "%Y-%m-%d %H:%M:%S.%f"
+            )
             for d in days:
                 if d.date() == booking_date.date():
                     day_label = d.strftime("%a")
@@ -641,12 +662,13 @@ def handle_avg_visit_quality_percentage(
         hour_buckets = {h: [] for h in range(6, 22)}
 
         for booking in all_bookings:
-            booking_time_str = booking.get("appointment_date").replace(",", "")
+            booking_time_str = datetime.strptime(
+                booking.get("appointment_date"), "%Y-%m-%d %H:%M:%S.%f"
+            )
             if not booking_time_str:
                 continue
             try:
-                time_obj = datetime.strptime(booking_time_str, "%A %B %d %I:%M %p")
-                time_obj = time_obj.replace(year=start_date.year)
+                time_obj = booking_time_str
                 hour = time_obj.hour
                 if 6 <= hour <= 21:
                     hour_buckets[hour].append(booking["percentage"])
@@ -671,14 +693,14 @@ def handle_avg_visit_quality_percentage(
         num_days = (end_date - start_date).days + 1
         daily_data = []
         if num_days <= 30:
-            current_day = (start_date - timedelta(days=1)).date()
-            range_end = (end_date - timedelta(days=1)).date()
+            current_day = start_date.date()
+            range_end = end_date.date()
             while current_day <= range_end:
                 percentages = []
                 for booking in all_bookings:
-                    sanitized_date = booking["appointment_date"].replace(",", "")
-                    date_obj = datetime.strptime(sanitized_date, "%A %B %d %I:%M %p")
-                    date_obj = date_obj.replace(year=current_day.year)
+                    date_obj = datetime.strptime(
+                        booking["appointment_date"], "%Y-%m-%d %H:%M:%S.%f"
+                    )
                     booking_date = date_obj.date()
                     if booking_date == current_day:
                         percentages.append(booking["percentage"])
@@ -698,8 +720,8 @@ def handle_avg_visit_quality_percentage(
         else:
             max_points = 30
             days_per_group = math.ceil(num_days / max_points)
-            current = start_date - timedelta(days=1)
-            end_date = end_date - timedelta(days=1)
+            current = start_date
+            end_date = end_date
             while current < end_date:
                 group_end = min(current + timedelta(days=days_per_group), end_date)
                 percentages = []
@@ -708,11 +730,9 @@ def handle_avg_visit_quality_percentage(
                 for d in range((group_end_date - group_start_date).days + 1):
                     day = group_start_date + timedelta(days=d)
                     for booking in all_bookings:
-                        sanitized_date = booking["appointment_date"].replace(",", "")
                         date_obj = datetime.strptime(
-                            sanitized_date, "%A %B %d %I:%M %p"
+                            booking["appointment_date"], "%Y-%m-%d %H:%M:%S.%f"
                         )
-                        date_obj = date_obj.replace(year=day.year)
                         booking_date = date_obj.date()
                         if booking_date == day:
                             percentages.append(booking["percentage"])
@@ -759,9 +779,9 @@ def handle_avg_aggregate_note_quality_percentage(
         monthly_counts = {}
 
         for booking in all_bookings:
-            sanitized_date = booking["appointment_date"].replace(",", "")
-            booking_date = datetime.strptime(sanitized_date, "%A %B %d %I:%M %p")
-            booking_date = booking_date.replace(year=start_date.year)
+            booking_date = datetime.strptime(
+                booking["appointment_date"], "%Y-%m-%d %H:%M:%S.%f"
+            )
             month = booking_date.month
             if month not in monthly_percentages:
                 monthly_percentages[month] = []
@@ -786,16 +806,16 @@ def handle_avg_aggregate_note_quality_percentage(
 
         num_days = (end_date - start_date).days + 1
         for i in range(num_days):
-            day = start_date - timedelta(days=1) + timedelta(days=i)
+            day = start_date + timedelta(days=i)
             label = day.strftime("%b %d")
             day_labels.append(label)
             daily_percentages[label] = []
 
         for booking in all_bookings:
             try:
-                sanitized_date = booking["appointment_date"].replace(",", "")
-                booking_date = datetime.strptime(sanitized_date, "%A %B %d %I:%M %p")
-                booking_date = booking_date.replace(year=start_date.year)
+                booking_date = datetime.strptime(
+                    booking["appointment_date"], "%Y-%m-%d %H:%M:%S.%f"
+                )
                 label = booking_date.strftime("%b %d")
                 if label in daily_percentages:
                     percentage = float(booking.get("percentage", 0))
@@ -817,13 +837,13 @@ def handle_avg_aggregate_note_quality_percentage(
         return {"data": daily_data[:-1]}
     elif duration == "last_7_days":
         daily_data = []
-        days = [(start_date - timedelta(days=1) + timedelta(days=i)) for i in range(7)]
+        days = [(start_date + timedelta(days=i)) for i in range(7)]
         daily_percentages = {d.strftime("%a"): [] for d in days}
 
         for booking in all_bookings:
-            sanitized_date = booking["appointment_date"].replace(",", "")
-            booking_date = datetime.strptime(sanitized_date, "%A %B %d %I:%M %p")
-            booking_date = booking_date.replace(year=start_date.year)
+            booking_date = datetime.strptime(
+                booking["appointment_date"], "%Y-%m-%d %H:%M:%S.%f"
+            )
             for d in days:
                 if d.date() == booking_date.date():
                     day_label = d.strftime("%a")
@@ -852,12 +872,13 @@ def handle_avg_aggregate_note_quality_percentage(
         hour_buckets = {h: [] for h in range(6, 22)}
 
         for booking in all_bookings:
-            booking_time_str = booking.get("appointment_date").replace(",", "")
+            booking_time_str = datetime.strptime(
+                booking.get("appointment_date"), "%Y-%m-%d %H:%M:%S.%f"
+            )
             if not booking_time_str:
                 continue
             try:
-                time_obj = datetime.strptime(booking_time_str, "%A %B %d %I:%M %p")
-                time_obj = time_obj.replace(year=start_date.year)
+                time_obj = booking_time_str
                 hour = time_obj.hour
                 if 6 <= hour <= 21:
                     hour_buckets[hour].append(booking["percentage"])
@@ -881,14 +902,14 @@ def handle_avg_aggregate_note_quality_percentage(
         num_days = (end_date - start_date).days + 1
         daily_data = []
         if num_days <= 30:
-            current_day = (start_date - timedelta(days=1)).date()
-            range_end = (end_date - timedelta(days=1)).date()
+            current_day = start_date.date()
+            range_end = end_date.date()
             while current_day <= range_end:
                 percentages = []
                 for booking in all_bookings:
-                    sanitized_date = booking["appointment_date"].replace(",", "")
-                    date_obj = datetime.strptime(sanitized_date, "%A %B %d %I:%M %p")
-                    date_obj = date_obj.replace(year=current_day.year)
+                    date_obj = datetime.strptime(
+                        booking["appointment_date"], "%Y-%m-%d %H:%M:%S.%f"
+                    )
                     booking_date = date_obj.date()
                     if booking_date == current_day:
                         percentages.append(booking["percentage"])
@@ -908,8 +929,8 @@ def handle_avg_aggregate_note_quality_percentage(
         else:
             max_points = 30
             days_per_group = math.ceil(num_days / max_points)
-            current = start_date - timedelta(days=1)
-            end_date = end_date - timedelta(days=1)
+            current = start_date
+            end_date = end_date
             while current < end_date:
                 group_end = min(current + timedelta(days=days_per_group), end_date)
                 percentages = []
@@ -918,11 +939,9 @@ def handle_avg_aggregate_note_quality_percentage(
                 for d in range((group_end_date - group_start_date).days + 1):
                     day = group_start_date + timedelta(days=d)
                     for booking in all_bookings:
-                        sanitized_date = booking["appointment_date"].replace(",", "")
                         date_obj = datetime.strptime(
-                            sanitized_date, "%A %B %d %I:%M %p"
+                            booking["appointment_date"], "%Y-%m-%d %H:%M:%S.%f"
                         )
-                        date_obj = date_obj.replace(year=day.year)
                         booking_date = date_obj.date()
                         if booking_date == day:
                             percentages.append(booking["percentage"])

@@ -144,6 +144,7 @@ def invite_manager(token):
                     "role_id": 4,
                     "username": user_data["username"],
                     "admin_id": user_data["user_id"],
+                    "is_verified": False,
                     "invited_at": datetime.now().isoformat(),
                 }
             )

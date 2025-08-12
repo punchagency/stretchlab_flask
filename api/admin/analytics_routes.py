@@ -46,6 +46,8 @@ def rpa_audit(token):
         if not start_date or not end_date:
             return jsonify({"error": "Invalid duration", "status": "error"}), 400
 
+        print(start_date, end_date, "start_date, end_date")
+
         config_id = (
             supabase.table("robot_process_automation_config")
             .select("id")
@@ -77,8 +79,8 @@ def rpa_audit(token):
                         .eq("config_id", config_id)
                         .eq("first_timer", filter_bookings)
                         .neq("status", "No Show")
-                        .gte("created_at", start_date)
-                        .lt("created_at", end_date)
+                        .gte("appointment_date", start_date)
+                        .lt("appointment_date", end_date)
                         .range(offset, offset + limit - 1)
                         .execute()
                     ).data
@@ -88,8 +90,8 @@ def rpa_audit(token):
                         .select("*")
                         .eq("config_id", config_id)
                         .neq("status", "No Show")
-                        .gte("created_at", start_date)
-                        .lt("created_at", end_date)
+                        .gte("appointment_date", start_date)
+                        .lt("appointment_date", end_date)
                         .range(offset, offset + limit - 1)
                         .execute()
                     ).data
@@ -110,8 +112,8 @@ def rpa_audit(token):
                         .eq("location", location)
                         .eq("first_timer", filter_bookings)
                         .neq("status", "No Show")
-                        .gte("created_at", start_date)
-                        .lt("created_at", end_date)
+                        .gte("appointment_date", start_date)
+                        .lt("appointment_date", end_date)
                         .range(offset, offset + limit - 1)
                         .execute()
                     ).data
@@ -122,8 +124,8 @@ def rpa_audit(token):
                         .eq("config_id", config_id)
                         .eq("location", location)
                         .neq("status", "No Show")
-                        .gte("created_at", start_date)
-                        .lt("created_at", end_date)
+                        .gte("appointment_date", start_date)
+                        .lt("appointment_date", end_date)
                         .range(offset, offset + limit - 1)
                         .execute()
                     ).data
@@ -142,8 +144,8 @@ def rpa_audit(token):
                         .eq("flexologist_name", flexologist_name)
                         .eq("first_timer", filter_bookings)
                         .neq("status", "No Show")
-                        .gte("created_at", start_date)
-                        .lt("created_at", end_date)
+                        .gte("appointment_date", start_date)
+                        .lt("appointment_date", end_date)
                         .range(offset, offset + limit - 1)
                         .execute()
                     ).data
@@ -154,8 +156,8 @@ def rpa_audit(token):
                         .eq("config_id", config_id)
                         .eq("flexologist_name", flexologist_name)
                         .neq("status", "No Show")
-                        .gte("created_at", start_date)
-                        .lt("created_at", end_date)
+                        .gte("appointment_date", start_date)
+                        .lt("appointment_date", end_date)
                         .range(offset, offset + limit - 1)
                         .execute()
                     ).data
@@ -175,8 +177,8 @@ def rpa_audit(token):
                         .eq("flexologist_name", flexologist_name)
                         .eq("first_timer", filter_bookings)
                         .neq("status", "No Show")
-                        .gte("created_at", start_date)
-                        .lt("created_at", end_date)
+                        .gte("appointment_date", start_date)
+                        .lt("appointment_date", end_date)
                         .range(offset, offset + limit - 1)
                         .execute()
                     ).data
@@ -188,8 +190,8 @@ def rpa_audit(token):
                         .eq("location", location)
                         .eq("flexologist_name", flexologist_name)
                         .neq("status", "No Show")
-                        .gte("created_at", start_date)
-                        .lt("created_at", end_date)
+                        .gte("appointment_date", start_date)
+                        .lt("appointment_date", end_date)
                         .range(offset, offset + limit - 1)
                         .execute()
                     ).data
@@ -459,8 +461,8 @@ def get_rpa_audit_details(token):
                     .select("*")
                     .eq("config_id", config_id)
                     .neq("status", "No Show")
-                    .gte("created_at", start_date)
-                    .lt("created_at", end_date)
+                    .gte("appointment_date", start_date)
+                    .lt("appointment_date", end_date)
                     .range(offset, offset + limit - 1)
                     .execute()
                 ).data
@@ -477,8 +479,8 @@ def get_rpa_audit_details(token):
                     .eq("config_id", config_id)
                     .eq("location", location)
                     .neq("status", "No Show")
-                    .gte("created_at", start_date)
-                    .lt("created_at", end_date)
+                    .gte("appointment_date", start_date)
+                    .lt("appointment_date", end_date)
                     .range(offset, offset + limit - 1)
                     .execute()
                 ).data
@@ -495,8 +497,8 @@ def get_rpa_audit_details(token):
                     .eq("config_id", config_id)
                     .eq("flexologist_name", flexologist_name)
                     .neq("status", "No Show")
-                    .gte("created_at", start_date)
-                    .lt("created_at", end_date)
+                    .gte("appointment_date", start_date)
+                    .lt("appointment_date", end_date)
                     .range(offset, offset + limit - 1)
                     .execute()
                 ).data
@@ -514,8 +516,8 @@ def get_rpa_audit_details(token):
                     .eq("flexologist_name", flexologist_name)
                     .eq("location", location)
                     .neq("status", "No Show")
-                    .gte("created_at", start_date)
-                    .lt("created_at", end_date)
+                    .gte("appointment_date", start_date)
+                    .lt("appointment_date", end_date)
                     .range(offset, offset + limit - 1)
                     .execute()
                 ).data
@@ -727,8 +729,8 @@ def get_ranking_analytics(token):
                         .eq("config_id", config_id)
                         .eq("first_timer", first_timer)
                         .neq("status", "No Show")
-                        .gte("created_at", start_date)
-                        .lt("created_at", end_date)
+                        .gte("appointment_date", start_date)
+                        .lt("appointment_date", end_date)
                         .range(offset, offset + limit - 1)
                         .execute()
                     ).data
@@ -743,8 +745,8 @@ def get_ranking_analytics(token):
                         .select("*")
                         .eq("config_id", config_id)
                         .neq("status", "No Show")
-                        .gte("created_at", start_date)
-                        .lt("created_at", end_date)
+                        .gte("appointment_date", start_date)
+                        .lt("appointment_date", end_date)
                         .range(offset, offset + limit - 1)
                         .execute()
                     ).data
@@ -821,8 +823,8 @@ def get_ranking_analytics(token):
                     supabase.table("robot_process_automation_notes_records")
                     .select("*")
                     .eq("config_id", config_id)
-                    .gte("created_at", start_date)
-                    .lt("created_at", end_date)
+                    .gte("appointment_date", start_date)
+                    .lt("appointment_date", end_date)
                     .neq("status", "No Show")
                     .range(offset, offset + limit - 1)
                     .execute()
@@ -873,8 +875,8 @@ def get_ranking_analytics(token):
                         .select("*")
                         .eq("user_id", flexologist["id"])
                         .eq("submitted", True)
-                        .gte("created_at", start_date - timedelta(days=1))
-                        .lt("created_at", end_date - timedelta(days=1))
+                        .gte("created_at", start_date)
+                        .lt("created_at", end_date)
                         .range(offset, offset + limit - 1)
                         .execute()
                         .data
@@ -983,8 +985,8 @@ def get_ranking_analytics(token):
                     .eq("config_id", config_id)
                     .eq("first_timer", first_timer)
                     .neq("status", "No Show")
-                    .gte("created_at", start_date)
-                    .lt("created_at", end_date)
+                    .gte("appointment_date", start_date)
+                    .lt("appointment_date", end_date)
                     .range(offset, offset + limit - 1)
                     .execute()
                 ).data
@@ -1094,8 +1096,8 @@ def get_ranking_analytics(token):
                     .select("*")
                     .eq("config_id", config_id)
                     .neq("status", "No Show")
-                    .gte("created_at", start_date)
-                    .lt("created_at", end_date)
+                    .gte("appointment_date", start_date)
+                    .lt("appointment_date", end_date)
                     .range(offset, offset + limit - 1)
                     .execute()
                 ).data
@@ -1233,6 +1235,8 @@ def get_location_analytics(token):
         if not start_date or not end_date:
             return jsonify({"error": "Invalid duration", "status": "error"}), 400
 
+        print(start_date, end_date, "start_date, end_date")
+
         config_id = (
             supabase.table("robot_process_automation_config")
             .select("id")
@@ -1262,8 +1266,8 @@ def get_location_analytics(token):
                         .eq("first_timer", first_timer)
                         .eq("location", location)
                         .neq("status", "No Show")
-                        .gte("created_at", start_date)
-                        .lt("created_at", end_date)
+                        .gte("appointment_date", start_date)
+                        .lt("appointment_date", end_date)
                         .range(offset, offset + limit - 1)
                         .execute()
                     ).data
@@ -1279,8 +1283,8 @@ def get_location_analytics(token):
                         .eq("config_id", config_id)
                         .eq("location", location)
                         .neq("status", "No Show")
-                        .gte("created_at", start_date)
-                        .lt("created_at", end_date)
+                        .gte("appointment_date", start_date)
+                        .lt("appointment_date", end_date)
                         .range(offset, offset + limit - 1)
                         .execute()
                     ).data
@@ -1332,7 +1336,6 @@ def get_location_analytics(token):
             )
 
         if metric == "percentage_app_submission":
-            print(start_date - timedelta(days=1), end_date - timedelta(days=1))
             offset = 0
             limit = 1000
             all_notes = []
@@ -1343,8 +1346,8 @@ def get_location_analytics(token):
                     .select("*")
                     .eq("config_id", config_id)
                     .eq("location", location)
-                    .gte("created_at", start_date)
-                    .lt("created_at", end_date)
+                    .gte("appointment_date", start_date)
+                    .lt("appointment_date", end_date)
                     .neq("status", "No Show")
                     .range(offset, offset + limit - 1)
                     .execute()
@@ -1396,8 +1399,8 @@ def get_location_analytics(token):
                         .eq("user_id", flexologist["id"])
                         .eq("location", location)
                         .eq("submitted", True)
-                        .gte("created_at", start_date - timedelta(days=1))
-                        .lt("created_at", end_date - timedelta(days=1))
+                        .gte("created_at", start_date)
+                        .lt("created_at", end_date)
                         .range(offset, offset + limit - 1)
                         .execute()
                         .data
@@ -1474,7 +1477,6 @@ def get_location_analytics(token):
 
         if first or subsequent:
             first_timer = "YES" if first else "NO"
-            print(start_date, end_date, location, "start_date, end_date")
             offset = 0
             limit = 1000
             all_notes = []
@@ -1486,8 +1488,8 @@ def get_location_analytics(token):
                     .eq("first_timer", first_timer)
                     .eq("location", location)
                     .neq("status", "No Show")
-                    .gte("created_at", start_date)
-                    .lt("created_at", end_date)
+                    .gte("appointment_date", start_date)
+                    .lt("appointment_date", end_date)
                     .range(offset, offset + limit - 1)
                     .execute()
                 ).data
@@ -1571,8 +1573,8 @@ def get_location_analytics(token):
                     .eq("config_id", config_id)
                     .eq("location", location)
                     .neq("status", "No Show")
-                    .gte("created_at", start_date)
-                    .lt("created_at", end_date)
+                    .gte("appointment_date", start_date)
+                    .lt("appointment_date", end_date)
                     .range(offset, offset + limit - 1)
                     .execute()
                 ).data

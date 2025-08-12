@@ -7,7 +7,7 @@ def get_start_and_end_date(duration, start_date_str=None, end_date_str=None):
         start_date = current_date.replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
         )
-        end_date = (current_date).replace(
+        end_date = (current_date - timedelta(days=1)).replace(
             hour=23, minute=59, second=59, microsecond=999999
         )
     elif duration == "ytd":
@@ -15,12 +15,12 @@ def get_start_and_end_date(duration, start_date_str=None, end_date_str=None):
         start_date = current_date.replace(
             month=1, day=1, hour=0, minute=0, second=0, microsecond=0
         )
-        end_date = (current_date).replace(
+        end_date = (current_date - timedelta(days=1)).replace(
             hour=23, minute=59, second=59, microsecond=999999
         )
     elif duration == "last_30_days":
         current_date = datetime.now()
-        end_date = (current_date).replace(
+        end_date = (current_date - timedelta(days=1)).replace(
             hour=23, minute=59, second=59, microsecond=999999
         )
         start_date = (end_date - timedelta(days=30)).replace(
@@ -30,7 +30,7 @@ def get_start_and_end_date(duration, start_date_str=None, end_date_str=None):
         current_date = datetime.now()
 
         # INFO - Exclude today: end_date is yesterday (end of day), start_date is 6 days before yesterday (start of day)
-        end_date = (current_date).replace(
+        end_date = (current_date - timedelta(days=1)).replace(
             hour=23, minute=59, second=59, microsecond=999999
         )
         start_date = (end_date - timedelta(days=6)).replace(
@@ -39,7 +39,7 @@ def get_start_and_end_date(duration, start_date_str=None, end_date_str=None):
 
     elif duration == "last_90_days":
         current_date = datetime.now()
-        end_date = (current_date).replace(
+        end_date = (current_date - timedelta(days=1)).replace(
             hour=23, minute=59, second=59, microsecond=999999
         )
         start_date = (end_date - timedelta(days=90)).replace(

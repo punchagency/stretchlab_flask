@@ -47,7 +47,6 @@ def login():
                 "maxlength": 120,
             },
         }
-        print("loggin details", request.get_json())
         data = validate_request(request.get_json(), schema)
 
         user = (
@@ -56,7 +55,6 @@ def login():
             .eq("email", data["email"].lower())
             .execute()
         )
-        print(user.data[0])
         if len(user.data) == 0:
             return (
                 jsonify(
@@ -148,7 +146,7 @@ def login():
                         200,
                     )
 
-                if user.data[0]["is_verified"] == False:
+                if user.data[0]["is_verified"] != True:
                     verification_code = generate_verification_code()
                     expiration_time = (
                         datetime.now() + timedelta(minutes=5)
@@ -174,6 +172,9 @@ def login():
                         "role_name": role_name,
                         "rpa_verified": get_business_details.data[0][
                             "robot_process_automation_active"
+                        ],
+                        "note_verified": get_business_details.data[0][
+                            "note_taking_active"
                         ],
                         "username": user.data[0]["username"],
                     },
@@ -276,6 +277,9 @@ def verify_2fa_login():
                         "username": user.data[0]["username"],
                         "rpa_verified": get_business_details.data[0][
                             "robot_process_automation_active"
+                        ],
+                        "note_verified": get_business_details.data[0][
+                            "note_taking_active"
                         ],
                     },
                     SECRET_KEY,
@@ -394,7 +398,6 @@ def reset_password():
     try:
         data = request.get_json()
         token = data.get("token")
-        print(token)
         password = data.get("password")
         user_data = decode_jwt_token(token)
         user = (
@@ -505,7 +508,7 @@ def register():
             "Verification Code",
             [user.data[0]["email"]],
             None,
-            f"<html><body><p>Your verification code is {verification_code}. It will expire in 20 minutes.</p></body></html>",
+            f"<html><body><p>Your verification code is {verification_code}</p></body></html>",
         )
 
         user = (
@@ -527,6 +530,7 @@ def register():
                 "role_name": role_name,
                 "username": user.data[0]["username"],
                 "rpa_verified": False,
+                "note_verified": False,
             },
             SECRET_KEY,
             algorithm="HS256",
