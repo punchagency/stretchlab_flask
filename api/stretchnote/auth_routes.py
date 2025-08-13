@@ -48,6 +48,7 @@ def clubready_validate(token):
             supabase.table("users")
             .select("id,role_id")
             .eq("username", user_data["username"])
+            .in_("role_id", [1, 2])
             .execute()
         )
         if result["status"]:
