@@ -1133,6 +1133,8 @@ def get_second_row(token):
 def get_third_row(token):
     try:
         user_data = decode_jwt_token(token)
+        duration = request.args.get("duration", "this_year")
+
         user_id = (
             supabase.table("users")
             .select("admin_id")
@@ -1140,7 +1142,7 @@ def get_third_row(token):
             .execute()
         ).data[0]["admin_id"]
         timezone_header = request.headers.get("X-Client-Timezone")
-        today_date = datetime.now(timezone_header).strftime("%Y-%m-%d")
+        # today_date = datetime.now(timezone_header).strftime("%Y-%m-%d")
         flexologists = (
             supabase.table("users")
             .select("full_name, id, status, profile_picture_url, last_login")
@@ -1150,13 +1152,31 @@ def get_third_row(token):
             .execute()
         )
 
+        if duration == "custom":
+            start_date_str = request.args.get("start_date")
+            end_date_str = request.args.get("end_date")
+            if not start_date_str or not end_date_str:
+                return (
+                    jsonify(
+                        {"error": "Start and end date are required", "status": "error"}
+                    ),
+                    400,
+                )
+            start_date, end_date = get_start_and_end_date(
+                duration, start_date_str, end_date_str
+            )
+
+        else:
+            start_date, end_date = get_start_and_end_date(duration)
+
         if flexologists.data:
             for flex in flexologists.data:
                 bookings = (
                     supabase.table("clubready_bookings")
                     .select("*")
                     .eq("user_id", flex["id"])
-                    .gte("created_at", today_date)
+                    .gte("created_at", start_date)
+                    .lt("created_at", end_date)
                     .execute()
                 )
 

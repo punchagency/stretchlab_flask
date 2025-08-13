@@ -12,9 +12,10 @@ from ..database.database import (
     get_owner_robot_automation_notes,
     get_owner_robot_automation_unlogged,
 )
+from ..utils.dashboard import get_start_and_end_date
 import logging
 from ..payment.stripe_utils import retrieve_payment_method, create_subscription
-from datetime import datetime
+from datetime import datetime, timedelta
 from ..utils.robot import create_s3_bucket, create_user_rule, update_user_rule_schedule
 from ..notification import insert_notification
 import json
@@ -543,9 +544,11 @@ def get_robot_config(token):
             supabase.table("users")
             .select("*")
             .eq("id", user_data["user_id"])
-            .in_("role_id", [1, 2])
+            .in_("role_id", [1, 2, 4])
             .execute()
         )
+        print(check_user_exists_and_is_admin.data, "check_user_exists_and_is_admin")
+
         if not check_user_exists_and_is_admin.data:
             return (
                 jsonify({"message": "User is not an admin", "status": "error"}),
@@ -554,17 +557,18 @@ def get_robot_config(token):
         robot_config = (
             supabase.table("robot_process_automation_config")
             .select("*, users(clubready_username,clubready_password)")
-            .eq("admin_id", user_data["user_id"])
+            .eq("admin_id", check_user_exists_and_is_admin.data[0]["admin_id"])
             .execute()
         )
+
         if robot_config.data:
             get_rpa_sub_status = (
                 supabase.table("businesses")
                 .select("robot_process_automation_active")
-                .eq("admin_id", user_data["user_id"])
+                .eq("admin_id", check_user_exists_and_is_admin.data[0]["admin_id"])
                 .execute()
             )
-            print(get_rpa_sub_status.data[0], "get_rpa_sub_status")
+
             password = reverse_hash_credentials(
                 robot_config.data[0]["users"]["clubready_username"],
                 robot_config.data[0]["users"]["clubready_password"],
@@ -595,13 +599,13 @@ def get_robot_config(token):
 def get_rpa_history(token, config_id):
     try:
         user_data = decode_jwt_token(token)
-        start_date = request.args.get("start_date", None)
-        end_date = request.args.get("end_date", None)
+        duration = request.args.get("duration", "this_year")
+
         check_user_exists_and_is_admin = (
             supabase.table("users")
             .select("*")
             .eq("id", user_data["user_id"])
-            .in_("role_id", [1, 2])
+            .in_("role_id", [1, 2, 4])
             .execute()
         )
         if not check_user_exists_and_is_admin.data:
@@ -610,54 +614,48 @@ def get_rpa_history(token, config_id):
                 401,
             )
 
-        if check_user_exists_and_is_admin.data[0]["role_id"] == 1:
-            rpa_history = get_owner_robot_automation_notes(start_date, end_date)
-            rpa_unlogged_history = get_owner_robot_automation_unlogged(
-                start_date, end_date
+        if duration == "custom":
+            start_date_str = request.args.get("start_date")
+            end_date_str = request.args.get("end_date")
+            if not start_date_str or not end_date_str:
+                return (
+                    jsonify(
+                        {"error": "Start and end date are required", "status": "error"}
+                    ),
+                    400,
+                )
+            start_date, end_date = get_start_and_end_date(
+                duration, start_date_str, end_date_str
             )
+
         else:
-            rpa_history = (
-                supabase.table("robot_process_automation_notes_records")
-                .select("*")
-                .eq("config_id", config_id)
-                .gte(
-                    "created_at",
-                    (
-                        start_date
-                        if start_date
-                        else datetime.combine(
-                            datetime.today(), datetime.min.time()
-                        ).isoformat()
-                    ),
-                )
-                .lt(
-                    "created_at",
-                    (
-                        end_date
-                        if end_date
-                        else datetime.combine(
-                            datetime.today(), datetime.max.time()
-                        ).isoformat()
-                    ),
-                )
-                .execute()
-            )
-            rpa_unlogged_history = (
-                supabase.table("robot_process_automation_unlogged_booking_records")
-                .select("*")
-                .eq("config_id", config_id)
-                .gte(
-                    "created_at",
-                    datetime.combine(datetime.today(), datetime.min.time()).isoformat(),
-                )
-                .lt(
-                    "created_at",
-                    datetime.combine(datetime.today(), datetime.max.time()).isoformat(),
-                )
-                .execute()
-            )
-            rpa_history = rpa_history.data
-            rpa_unlogged_history = rpa_unlogged_history.data
+            start_date, end_date = get_start_and_end_date(duration)
+
+        # if check_user_exists_and_is_admin.data[0]["role_id"] == 1:
+        #     rpa_history = get_owner_robot_automation_notes(start_date, end_date)
+        #     rpa_unlogged_history = get_owner_robot_automation_unlogged(
+        #         start_date, end_date
+        #     )
+        # else:
+
+        rpa_history = (
+            supabase.table("robot_process_automation_notes_records")
+            .select("*")
+            .eq("config_id", config_id)
+            .gte("appointment_date", start_date)
+            .lt("appointment_date", end_date)
+            .execute()
+        )
+        rpa_unlogged_history = (
+            supabase.table("robot_process_automation_unlogged_booking_records")
+            .select("*")
+            .eq("config_id", config_id)
+            .gte("appointment_date", start_date)
+            .lt("appointment_date", end_date)
+            .execute()
+        )
+        rpa_history = rpa_history.data
+        rpa_unlogged_history = rpa_unlogged_history.data
 
         return (
             jsonify(
