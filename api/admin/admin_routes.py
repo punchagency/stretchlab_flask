@@ -145,6 +145,9 @@ def invite_user(token):
             .execute()
         )
         if check_user_invited.data:
+            supabase.table("users").update({"password": hashed_password}).eq(
+                "email", email
+            ).execute()
             send_email(
                 "Invitation to Stretchnote Note taking app",
                 [email],
@@ -269,7 +272,7 @@ def get_users(token):
                 supabase.table("users")
                 .select("*")
                 .eq("username", user_data["username"])
-                .neq("role_id", 1)
+                .eq("role_id", 3)
                 .execute()
             )
             employees_from_supabase = employees_from_supabase.data
@@ -292,7 +295,7 @@ def get_users(token):
                 supabase.table("users")
                 .select("*")
                 .eq("username", user_data["username"])
-                .neq("role_id", 2)
+                .eq("role_id", 3)
                 .execute()
             )
             employees = user.data
