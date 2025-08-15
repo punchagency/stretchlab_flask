@@ -46,8 +46,6 @@ def rpa_audit(token):
         if not start_date or not end_date:
             return jsonify({"error": "Invalid duration", "status": "error"}), 400
 
-        print(start_date, end_date, "start_date, end_date")
-
         config_id = (
             supabase.table("robot_process_automation_config")
             .select("id")
@@ -101,7 +99,6 @@ def rpa_audit(token):
                 offset += limit
 
         if location and not flexologist_name:
-            print(start_date, end_date, "start_date, end_date")
 
             while True:
                 if filter_bookings:
@@ -1234,8 +1231,6 @@ def get_location_analytics(token):
 
         if not start_date or not end_date:
             return jsonify({"error": "Invalid duration", "status": "error"}), 400
-
-        print(start_date, end_date, "start_date, end_date")
 
         config_id = (
             supabase.table("robot_process_automation_config")

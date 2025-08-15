@@ -70,7 +70,6 @@ def invite_user(token):
             payment_method = retrieve_payment_method(
                 check_subscription.data[0]["payment_id"]
             )
-            print(payment_method, "payment_method")
             paymentinfo = {
                 "brand": payment_method.card.brand,
                 "last4": payment_method.card.last4,
@@ -313,7 +312,6 @@ def validate_login(token):
         data = request.get_json()
 
         validate_login = clubready_admin_login(data)
-        print(user_data["user_id"], "user info")
         if validate_login["status"]:
             supabase.table("users").update(
                 {
@@ -371,7 +369,6 @@ def save_robot_config(token):
             .eq("admin_id", user_data["user_id"])
             .execute()
         )
-        print(check_user_exists_and_is_admin.data[0])
         if (
             not check_subscription.data[0]["payment_id"]
             and check_user_exists_and_is_admin.data[0]["role_id"] != 1
@@ -395,7 +392,6 @@ def save_robot_config(token):
             payment_method = retrieve_payment_method(
                 check_subscription.data[0]["payment_id"]
             )
-            print(payment_method, "payment_method")
             paymentinfo = {
                 "brand": payment_method.card.brand,
                 "last4": payment_method.card.last4,
@@ -550,7 +546,6 @@ def get_robot_config(token):
             .in_("role_id", [1, 2, 4])
             .execute()
         )
-        print(check_user_exists_and_is_admin.data, "check_user_exists_and_is_admin")
 
         if not check_user_exists_and_is_admin.data:
             return (

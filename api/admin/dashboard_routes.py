@@ -869,9 +869,6 @@ def get_second_row(token):
                         all_bookings.append(booking)
 
                 else:
-                    print(location, "location")
-                    print(start_date, "start_date")
-                    print(end_date, "end_date")
                     while True:
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
@@ -970,7 +967,6 @@ def get_second_row(token):
                         booking["percentage"] = percentage
                         all_bookings.append(booking)
 
-            print(len(all_bookings), "all_bookings")
             data = handle_avg_visit_quality_percentage(
                 duration, all_bookings, start_date, end_date
             )

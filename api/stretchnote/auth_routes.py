@@ -333,7 +333,7 @@ def forgot_password():
                 jsonify({"message": "User is not a flexologist", "status": "error"}),
                 400,
             )
-        if user.data[0]["status"] != 1:
+        if user.data[0]["status"] not in [1, 4, 5]:
             return (
                 jsonify(
                     {
