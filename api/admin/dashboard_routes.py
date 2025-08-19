@@ -424,17 +424,17 @@ def get_chart_filters(token):
                     "value": "total_client_visits",
                 },
                 {
-                    "label": "Avg 1st Visit Quality %",
-                    "value": "avg_1st_visit_quality_percentage",
+                    "label": "Avg Note Quality %",
+                    "value": "avg_",
                 },
-                {
-                    "label": "Avg Subsequent Visit Quality %",
-                    "value": "avg_subsequent_visit_quality_percentage",
-                },
-                {
-                    "label": "Avg Aggregate Note Quality %",
-                    "value": "avg_aggregate_note_quality_percentage",
-                },
+                # {
+                #     "label": "Avg Subsequent Visit Quality %",
+                #     "value": "avg_subsequent_visit_quality_percentage",
+                # },
+                # {
+                #     "label": "Avg Aggregate Note Quality %",
+                #     "value": "avg_aggregate_note_quality_percentage",
+                # },
             ]
         else:
             filters = [

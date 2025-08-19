@@ -161,7 +161,7 @@ def login():
         user = (
             supabase.table("users")
             .select("*, roles(name)")
-            .eq("email", data["email"])
+            .eq("email", data["email"].lower())
             .execute()
         )
         if len(user.data) == 0:
@@ -174,9 +174,11 @@ def login():
             .execute()
         )
         get_admin = (
-            supabase.table("users").select("role_id").eq("id", user.data[0]["admin_id"])
-        ).execute()
-
+            supabase.table("users")
+            .select("role_id")
+            .eq("id", user.data[0]["admin_id"])
+            .execute()
+        )
         if (
             not check_admin_subscription_active.data[0]["note_taking_active"]
             and get_admin.data[0]["role_id"] != 1
@@ -271,47 +273,59 @@ def login():
 
 
 @routes.route("/change-password", methods=["POST"])
-@require_bearer_token
-def change_password(token):
+def change_password():
     try:
-        user_data = decode_jwt_token(token)
         data = request.get_json()
+        email = data.get("email")
+        new_password = data.get("new_password")
 
-        user = (
-            supabase.table("users").select("*").eq("id", user_data["user_id"]).execute()
-        )
+        if not email or not new_password:
+            return (
+                jsonify(
+                    {
+                        "message": "Email and new password are required",
+                        "status": "error",
+                    }
+                ),
+                400,
+            )
+
+        user = supabase.table("users").select("*").eq("email", email).execute()
         if len(user.data) == 0:
             return (
                 jsonify(
                     {
-                        "message": "You don't have an account, or you are not logged in",
+                        "message": "User does not exist",
                         "status": "error",
                     }
                 ),
                 404,
             )
 
-        if verify_password(data["old_password"], user.data[0]["password"]):
-            hashed_password = hash_password(data["new_password"])
-            supabase.table("users").update(
-                {
-                    "password": hashed_password,
-                    "status": 5,
-                    "created_at": datetime.now().isoformat(),
-                }
-            ).eq("id", user_data["user_id"]).execute()
-
+        if user.data[0]["password"] != "empty":
             return (
                 jsonify(
-                    {"message": "Password changed successfully", "status": "success"}
+                    {
+                        "message": "Password already exists, if you forgot your password, please reset it",
+                        "status": "error",
+                    }
                 ),
-                200,
-            )
-        else:
-            return (
-                jsonify({"message": "Invalid old password", "status": "error"}),
                 400,
             )
+
+        hashed_password = hash_password(new_password)
+        supabase.table("users").update(
+            {
+                "password": hashed_password,
+                "status": 5,
+                "created_at": datetime.now().isoformat(),
+            }
+        ).eq("email", email).execute()
+
+        return (
+            jsonify({"message": "Password changed successfully", "status": "success"}),
+            200,
+        )
 
     except Exception as e:
         logging.error(f"Error in POST /stretchnote/auth/change-password: {str(e)}")

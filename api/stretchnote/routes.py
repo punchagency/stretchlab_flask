@@ -298,11 +298,12 @@ def get_client_history(token):
     try:
         user_data = decode_jwt_token(token)
         data = request.get_json()
-        client_name = data["client_name"]
+        client_name = data["client_name"].lower()
         client_history = (
             supabase.table("clubready_bookings")
             .select("*")
             .eq("client_name", client_name)
+            .eq("submitted", True)
             .execute()
         )
         return (

@@ -431,6 +431,10 @@ async def get_user_bookings_from_clubready(user_details, max_concurrency=3):
                 await page.wait_for_selector(
                     ".spinner-background", state="hidden", timeout=40000
                 )
+                location_element = await page.query_selector(
+                    "#menu-location .location-name"
+                )
+                location = await location_element.inner_text()
 
                 await page.click("#dropdown-button")
                 await page.wait_for_selector(
@@ -551,7 +555,7 @@ async def get_user_bookings_from_clubready(user_details, max_concurrency=3):
                             "past": past,
                             "first_timer": first_timer,
                             "active": active,
-                            "location": "All Locations",
+                            "location": location.lower(),
                         }
                         all_bookings.append(result)
 

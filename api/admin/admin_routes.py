@@ -19,6 +19,8 @@ from datetime import datetime, timedelta
 from ..utils.robot import create_s3_bucket, create_user_rule, update_user_rule_schedule
 from ..notification import insert_notification
 import json
+import jwt
+import os
 
 routes = Blueprint("admin", __name__)
 
@@ -90,9 +92,8 @@ def invite_user(token):
                 ),
                 402,
             )
-
-        email = data.get("email")
-        password, hashed_password = generate_random_password()
+        email = data.get("email").lower()
+        # password, hashed_password = generate_random_password()
 
         check_user_non_flexologist = (
             supabase.table("users")
@@ -101,6 +102,7 @@ def invite_user(token):
             .neq("role_id", 3)
             .execute()
         )
+
         if check_user_non_flexologist.data:
             return (
                 jsonify({"message": "User is not a flexologist", "status": "warning"}),
@@ -114,6 +116,7 @@ def invite_user(token):
             .eq("role_id", 3)
             .execute()
         )
+
         if check_user_active.data:
             return jsonify({"message": "User already active", "status": "warning"}), 409
 
@@ -144,14 +147,19 @@ def invite_user(token):
             .execute()
         )
         if check_user_invited.data:
-            supabase.table("users").update({"password": hashed_password}).eq(
-                "email", email
-            ).execute()
+            email_token = jwt.encode(
+                {"email": email}, os.getenv("JWT_SECRET_KEY"), algorithm="HS256"
+            )
+            # supabase.table("users").update({"password": hashed_password}).eq(
+            #     "email", email
+            # ).execute()
+
+            print(email_token, "email_token")
             send_email(
                 "Invitation to Stretchnote Note taking app",
                 [email],
                 None,
-                f"<html><body><p>You have been invited to the <a href='https://www.stretchnote.com/login'>Stretchnote Note taking app</a>. These are your login credentials:</p><p>Email: {email}</p><p>Password: {password}</p> <p>Here is the link to the app: <a href='https://www.stretchnote.com/login'>Stretchnote Note taking app</a></p></body></html>",
+                f"<html><body><p>You have been invited to the <a href='https://www.stretchnote.com/verification?token={email_token}'>Stretchnote Note taking app</a>. Click the link to verify your email and complete your registration.</p><a style='color: #000; text-decoration: none; padding: 10px 20px; background-color: #007bff; border-radius: 5px; margin-top: 20px;' href='https://www.stretchnote.com/verification?token={email_token}'>Verify Email</a></body></html>",
             )
 
             return (
@@ -197,7 +205,7 @@ def invite_user(token):
                     "role_id": 3,
                     "username": check_user_exists_and_is_admin.data[0]["username"],
                     "admin_id": check_user_exists_and_is_admin.data[0]["admin_id"],
-                    "password": hashed_password,
+                    "password": "empty",
                     "invited_at": datetime.now().isoformat(),
                 }
             )
@@ -205,11 +213,14 @@ def invite_user(token):
         )
         new_user = new_user.data[0]
         if new_user:
+            email_token = jwt.encode(
+                {"email": email}, os.getenv("JWT_SECRET_KEY"), algorithm="HS256"
+            )
             status = send_email(
                 "Invitation to Stretchnote Note taking app",
                 [email],
                 None,
-                f"<html><body><p>You have been invited to the <a href='https://www.stretchnote.com/login'>Stretchnote Note taking app</a>. These are your login credentials:</p><p>Email: {email}</p><p>Password: {password}</p> <p>Here is the link to the app: <a href='https://www.stretchnote.com/login'>Stretchnote Note taking app</a></p></body></html>",
+                f"<html><body><p>You have been invited to the <a href='https://www.stretchnote.com/verification?token={email_token}'>Stretchnote Note taking app</a>. Click the link to verify your email and complete your registration.</p><a style='color: #000; text-decoration: none; padding: 10px 20px; background-color: #007bff; border-radius: 5px; margin-top: 20px;' href='https://www.stretchnote.com/verification?token={email_token}'>Verify Email</a></body></html>",
             )
             if status["success"]:
                 return (

@@ -540,6 +540,9 @@ def get_rpa_audit_details(token):
         locations_with_opportunity_count = {}
         flexologist_with_opportunity_count = {}
 
+        total_location_notes = {}
+        total_flexologist_note = {}
+
         for note in rpa_notes:
             if (
                 note["note_oppurtunities"] != "N/A"
@@ -551,7 +554,11 @@ def get_rpa_audit_details(token):
                 notes_with_opportunities.append(note)
                 if note["location"] not in locations_with_opportunity_count:
                     locations_with_opportunity_count[note["location"]] = 0
+
                 locations_with_opportunity_count[note["location"]] += 1
+                if note["location"] not in total_location_notes:
+                    total_location_notes[note["location"]] = 0
+                total_location_notes[note["location"]] += 1
                 if (
                     note["flexologist_name"].lower()
                     not in flexologist_with_opportunity_count
@@ -562,6 +569,16 @@ def get_rpa_audit_details(token):
                 flexologist_with_opportunity_count[
                     note["flexologist_name"].lower()
                 ] += 1
+                if note["flexologist_name"] not in total_flexologist_note:
+                    total_flexologist_note[note["flexologist_name"]] = 0
+                total_flexologist_note[note["flexologist_name"]] += 1
+            else:
+                if note["location"] not in total_location_notes:
+                    total_location_notes[note["location"]] = 0
+                total_location_notes[note["location"]] += 1
+                if note["flexologist_name"] not in total_flexologist_note:
+                    total_flexologist_note[note["flexologist_name"]] = 0
+                total_flexologist_note[note["flexologist_name"]] += 1
 
         notes_with_particular_opportunity = []
         locations_with_particular_opportunity_count = {}
@@ -651,11 +668,55 @@ def get_rpa_audit_details(token):
                 {
                     "status": "success",
                     "location": [
-                        {"location": location, "percentage": percentage}
+                        {
+                            "location": location,
+                            "percentage": percentage,
+                            "particular_count": locations_with_particular_opportunity_count.get(
+                                location, 0
+                            ),
+                            "total_count": locations_with_opportunity_count.get(
+                                location, 0
+                            ),
+                            "percentage_note_quality": round(
+                                (
+                                    (
+                                        total_location_notes.get(location, 0)
+                                        - locations_with_opportunity_count.get(
+                                            location, 0
+                                        )
+                                    )
+                                    / total_location_notes.get(location, 0)
+                                )
+                                * 100,
+                                2,
+                            ),
+                        }
                         for location, percentage in sorted_locations_with_particular_opportunity_percentage
                     ],
                     "flexologist": [
-                        {"flexologist": flexologist, "percentage": percentage}
+                        {
+                            "flexologist": flexologist,
+                            "percentage": percentage,
+                            "particular_count": flexologist_with_particular_opportunity_count.get(
+                                flexologist, 0
+                            ),
+                            "total_count": flexologist_with_opportunity_count.get(
+                                flexologist, 0
+                            ),
+                            "percentage_note_quality": round(
+                                (
+                                    (
+                                        total_flexologist_note.get(flexologist, 0)
+                                        - flexologist_with_opportunity_count.get(
+                                            flexologist, 0
+                                        )
+                                    )
+                                    / total_flexologist_note.get(flexologist, 0)
+                                )
+                                * 100,
+                                2,
+                            ),
+                        }
                         for flexologist, percentage in sorted_flexologist_with_particular_opportunity_percentage
                     ],
                 }
