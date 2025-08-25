@@ -37,6 +37,13 @@ def invite_user(token):
             .in_("role_id", [1, 2, 4])
             .execute()
         )
+        check_if_a_user_already_invited = (
+            supabase.table("users")
+            .select("*")
+            .eq("admin_id", user_data["user_id"])
+            .eq("role_id", 3)
+            .execute()
+        )
         if not check_user_exists_and_is_admin.data:
             return (
                 jsonify({"message": "User is not an admin", "status": "error"}),
@@ -68,6 +75,7 @@ def invite_user(token):
             not check_subscription.data[0]["note_taking_subscription_id"]
             and not data["proceed"]
             and check_user_exists_and_is_admin.data[0]["role_id"] != 1
+            and not check_if_a_user_already_invited.data
         ):
             payment_method = retrieve_payment_method(
                 check_subscription.data[0]["payment_id"]
@@ -150,9 +158,9 @@ def invite_user(token):
             email_token = jwt.encode(
                 {"email": email}, os.getenv("JWT_SECRET_KEY"), algorithm="HS256"
             )
-            # supabase.table("users").update({"password": hashed_password}).eq(
-            #     "email", email
-            # ).execute()
+            supabase.table("users").update({"password": "empty"}).eq(
+                "email", email
+            ).execute()
 
             print(email_token, "email_token")
             send_email(
@@ -184,7 +192,7 @@ def invite_user(token):
                 "Please Complete your Registration",
                 [email],
                 None,
-                f"<html><body><p>Please complete your registration by clicking the link below:</p><p><a href='https://www.stretchnote.com/login'>Complete Registration</a></p>body></html>",
+                f"<html><body><p>Please complete your registration by clicking the link below:</p><p><a href='https://www.stretchnote.com/login'>Complete Registration</a></p></body></html>",
             )
 
             return (

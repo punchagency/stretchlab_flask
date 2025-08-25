@@ -266,15 +266,16 @@ def get_activities(token):
             notes_submitted_per_flexologist = {}
             notes_submitted_per_location = {}
             for booking in notes_submitted_with_app:
-                if booking["flexologist_name"] not in notes_submitted_per_flexologist:
-                    notes_submitted_per_flexologist[booking["flexologist_name"]] = 1
+                normalized_flexologist = booking["flexologist_name"].lower()
+                if normalized_flexologist not in notes_submitted_per_flexologist:
+                    notes_submitted_per_flexologist[normalized_flexologist] = 1
                 else:
-                    notes_submitted_per_flexologist[booking["flexologist_name"]] += 1
-                if booking["location"] not in notes_submitted_per_location:
-                    notes_submitted_per_location[booking["location"]] = 1
+                    notes_submitted_per_flexologist[normalized_flexologist] += 1
+                normalized_location = booking["location"].lower()
+                if normalized_location not in notes_submitted_per_location:
+                    notes_submitted_per_location[normalized_location] = 1
                 else:
-                    notes_submitted_per_location[booking["location"]] += 1
-
+                    notes_submitted_per_location[normalized_location] += 1
             notes_submitted_with_app = len(notes_submitted_with_app)
 
         else:

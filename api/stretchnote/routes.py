@@ -19,6 +19,7 @@ import asyncio
 import threading
 import uuid
 import pytz
+from datetime import timedelta
 
 routes = Blueprint("routes", __name__)
 
@@ -357,6 +358,123 @@ def get_notes(token, booking_id):
             return jsonify({"message": "No notes found", "status": "error"}), 404
     except Exception as e:
         logging.error(f"Error in GET /api/resource: {str(e)}")
+        return jsonify({"error": "Internal server error", "status": "error"}), 500
+
+
+@routes.route("/get_ai_insights", methods=["GET"])
+@require_bearer_token
+def get_ai_logic(token):
+    try:
+        user_data = decode_jwt_token(token)
+        user_id = user_data["user_id"]
+        flexologist_name = (
+            supabase.table("users")
+            .select("*")
+            .eq("id", user_id)
+            .execute()
+            .data[0]["full_name"]
+        )
+        flexologist_name = flexologist_name.lower()
+
+        current_date = datetime.now()
+
+        end_date = (current_date - timedelta(days=1)).replace(
+            hour=23, minute=59, second=59, microsecond=999999
+        )
+        start_date = (end_date - timedelta(days=29)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        rpa_notes = (
+            supabase.table("robot_process_automation_notes_records")
+            .select("*")
+            .eq("flexologist_name", flexologist_name)
+            .gte("created_at", start_date)
+            .lt("created_at", end_date)
+            .execute()
+            .data
+        )
+
+        total_quality_notes_percentage_array = []
+
+        opportunities = [
+            "Needs Analysis: Deep Emotional Reason(Why)",
+            "Needs Analysis: Physiscal Need",
+            "Session Note: Problem Presented",
+            "Session Note: What was worked On",
+            "Session Note: Tension Level & Frequency",
+            "Session Note: Prescribed Action",
+            "Session Note: Homework",
+            "Quality: No Future Bookings",
+            "Quality: Missing Homework",
+            "Quality: Missing Waiver",
+            "Quality: Other",
+        ]
+
+        opportunity_texts = {
+            "Needs Analysis: Deep Emotional Reason(Why)": "Missing the client's deep emotional motivation (the WHY) behind their wellness goals.",
+            "Needs Analysis: Physiscal Need": "Missing summary of the client's physical needs in the needs analysis.",
+            "Session Note: Problem Presented": "Missing description of the problem presented by the client during the session.",
+            "Session Note: What was worked On": "Missing details on what was worked on during the session.",
+            "Session Note: Tension Level & Frequency": "Missing information on tension levels and frequency in the session notes.",
+            "Session Note: Prescribed Action": "Missing prescribed actions or next session plan.",
+            "Session Note: Homework": "Missing homework assignments in the session notes.",
+            "Quality: No Future Bookings": "No future bookings or membership recommendations noted.",
+            "Quality: Missing Homework": "Homework not assigned or reason not explained.",
+            "Quality: Missing Waiver": "Missing waiver information in the notes.",
+            "Quality: Other": "Other quality issues identified in the notes.",
+        }
+
+        opportunities_count = {}
+
+        for note in rpa_notes:
+            if note["first_timer"] == "YES":
+                if note["note_score"] == "N/A":
+                    percentage = 0
+                else:
+                    percentage = (int(note["note_score"]) * 100) / 18
+            else:
+                if note["note_score"] == "N/A":
+                    percentage = 0
+                else:
+                    percentage = (int(note["note_score"]) * 100) / 4
+            for opportunity in opportunities:
+                if opportunity in note["note_oppurtunities"]:
+                    opportunities_count[opportunity] = (
+                        opportunities_count.get(opportunity, 0) + 1
+                    )
+            total_quality_notes_percentage_array.append(percentage)
+
+        top_opportunities = sorted(
+            opportunities_count.items(), key=lambda x: x[1], reverse=True
+        )[:3]
+
+        top_opportunities_list = [
+            {
+                "opportunity": opp,
+                "count": count,
+                "text": opportunity_texts.get(opp, "No description available"),
+            }
+            for opp, count in top_opportunities
+        ]
+
+        total_average_quality_notes_percentage = sum(
+            total_quality_notes_percentage_array
+        ) / len(total_quality_notes_percentage_array)
+
+        return (
+            jsonify(
+                {
+                    "average_quality_notes_percentage": round(
+                        total_average_quality_notes_percentage, 2
+                    ),
+                    "top_opportunities": top_opportunities_list,
+                    "status": "success",
+                }
+            ),
+            200,
+        )
+    except Exception as e:
+        logging.error(f"Error in GET /api/stretchnote/get_ai_insights: {str(e)}")
         return jsonify({"error": "Internal server error", "status": "error"}), 500
 
 

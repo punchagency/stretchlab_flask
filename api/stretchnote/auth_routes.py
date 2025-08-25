@@ -169,7 +169,7 @@ def login():
 
         check_admin_subscription_active = (
             supabase.table("businesses")
-            .select("note_taking_active")
+            .select("note_taking_active, note_taking_subscription_id")
             .eq("admin_id", user.data[0]["admin_id"])
             .execute()
         )
@@ -181,6 +181,7 @@ def login():
         )
         if (
             not check_admin_subscription_active.data[0]["note_taking_active"]
+            and check_admin_subscription_active.data[0]["note_taking_subscription_id"]
             and get_admin.data[0]["role_id"] != 1
         ):
             return (
@@ -205,6 +206,17 @@ def login():
                 jsonify(
                     {
                         "message": "User is not a flexologist, cannot proceed",
+                        "status": "error",
+                    }
+                ),
+                400,
+            )
+
+        if user.data[0]["password"] == "empty":
+            return (
+                jsonify(
+                    {
+                        "message": "User is yet to verify email, please check your email or contact admin",
                         "status": "error",
                     }
                 ),
@@ -306,7 +318,7 @@ def change_password():
             return (
                 jsonify(
                     {
-                        "message": "Password already exists, if you forgot your password, please reset it",
+                        "message": "Password already exists, please login",
                         "status": "error",
                     }
                 ),
@@ -323,7 +335,7 @@ def change_password():
         ).eq("email", email).execute()
 
         return (
-            jsonify({"message": "Password changed successfully", "status": "success"}),
+            jsonify({"message": "Password created successfully", "status": "success"}),
             200,
         )
 
@@ -347,7 +359,10 @@ def forgot_password():
                 jsonify({"message": "User is not a flexologist", "status": "error"}),
                 400,
             )
-        if user.data[0]["status"] not in [1, 4, 5]:
+        if (
+            user.data[0]["status"] not in [1, 4, 5]
+            or user.data[0]["password"] == "empty"
+        ):
             return (
                 jsonify(
                     {
