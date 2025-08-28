@@ -313,7 +313,7 @@ def get_users(token):
                 supabase.table("users")
                 .select("*")
                 .eq("username", user_data["username"])
-                .eq("role_id", 3)
+                .in_("role_id", [3, 8])
                 .execute()
             )
             employees = user.data
