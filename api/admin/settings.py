@@ -747,6 +747,90 @@ def verify_change_email(token):
         return jsonify({"error": str(e), "status": "error"}), 500
 
 
+@routes.route("/update-permissions", methods=["POST"])
+@require_bearer_token
+def update_permissions(token):
+    try:
+        user_data = decode_jwt_token(token)
+        data = request.get_json()
+        email = data.get("email")
+        position = data.get("position")
+        status = data.get("status")
+
+        if not email:
+            return (
+                jsonify({"message": "Email is required", "status": "error"}),
+                400,
+            )
+        if not position:
+            return (
+                jsonify({"message": "Position is required", "status": "error"}),
+                400,
+            )
+
+        checking_if_user_exists = (
+            supabase.table("users")
+            .select("status, role_id")
+            .eq("email", email)
+            .execute()
+        )
+        if not checking_if_user_exists.data:
+            return (
+                jsonify({"message": "User not found", "status": "error"}),
+                404,
+            )
+        if checking_if_user_exists.data[0]["role_id"] in [1, 2]:
+            return (
+                jsonify(
+                    {
+                        "message": "You cannot update the permissions of this user",
+                        "status": "error",
+                    }
+                ),
+                400,
+            )
+        if checking_if_user_exists.data[0]["status"] in [2, 3, 4]:
+            return jsonify(
+                {
+                    "message": "You cannot update the permissions of this user",
+                    "status": "error",
+                }
+            )
+
+        role_id = None
+        if status == True:
+            role_id = 8
+        else:
+            if position == "manager":
+                role_id = 4
+            else:
+                role_id = 3
+
+        check_admin_role = (
+            supabase.table("users").select("*").eq("id", user_data["user_id"]).execute()
+        )
+        if check_admin_role.data[0]["role_id"] not in [1, 2]:
+            return (
+                jsonify({"message": "Unauthorized access", "status": "error"}),
+                400,
+            )
+        user = supabase.table("users").select("*").eq("email", data["email"]).execute()
+        if not user.data:
+            return jsonify({"message": "User not found", "status": "error"}), 404
+        supabase.table("users").update({"role_id": role_id}).eq(
+            "id", user.data[0]["id"]
+        ).execute()
+        return (
+            jsonify(
+                {"message": "Permissions updated successfully", "status": "success"}
+            ),
+            200,
+        )
+    except Exception as e:
+        logging.error(f"Error in POST api/admin/settings/update-permissions: {str(e)}")
+        return jsonify({"error": str(e), "status": "error"}), 500
+
+
 def init_settings_routes(app):
     global supabase
     supabase = app.config["SUPABASE"]

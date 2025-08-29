@@ -65,16 +65,6 @@ def login():
                 ),
                 404,
             )
-        if user.data[0]["role_id"] == 3:
-            return (
-                jsonify(
-                    {
-                        "message": "Unauthorized access, you are not an admin",
-                        "status": "error",
-                    }
-                ),
-                400,
-            )
 
         if user.data[0]["status"] == 2:
             return (
@@ -105,6 +95,16 @@ def login():
                 ),
                 400,
             )
+        if user.data[0]["password"] == "empty" and user.data[0]["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "message": "User is yet to verify email, please check your email or contact admin",
+                        "status": "error",
+                    }
+                ),
+                400,
+            )
         role_name = (
             user.data[0]["roles"]["name"]
             if user.data and user.data[0]["roles"]
@@ -118,6 +118,84 @@ def login():
                 .execute()
             )
             if verify_password(data["password"], user.data[0]["password"]):
+
+                if user.data[0]["role_id"] == 3:
+                    check_admin_subscription_active = (
+                        supabase.table("businesses")
+                        .select("note_taking_active, note_taking_subscription_id")
+                        .eq("admin_id", user.data[0]["admin_id"])
+                        .execute()
+                    )
+                    get_admin = (
+                        supabase.table("users")
+                        .select("role_id")
+                        .eq("id", user.data[0]["admin_id"])
+                        .execute()
+                    )
+                    if (
+                        not check_admin_subscription_active.data[0][
+                            "note_taking_active"
+                        ]
+                        and check_admin_subscription_active.data[0][
+                            "note_taking_subscription_id"
+                        ]
+                        and get_admin.data[0]["role_id"] != 1
+                    ):
+                        return (
+                            jsonify(
+                                {
+                                    "message": "Admin subscription is not active, contact admin",
+                                    "status": "error",
+                                }
+                            ),
+                            400,
+                        )
+                    if user.data[0]["status"] == 2:
+                        return (
+                            jsonify(
+                                {
+                                    "message": "User is disabled, contact admin",
+                                    "status": "error",
+                                }
+                            ),
+                            400,
+                        )
+                    if user.data[0]["password"] == "empty":
+                        return (
+                            jsonify(
+                                {
+                                    "message": "User is yet to verify email, please check your email or contact admin",
+                                    "status": "error",
+                                }
+                            ),
+                            400,
+                        )
+                    is_verified = True if user.data[0]["status"] == 1 else False
+                    token = jwt.encode(
+                        {
+                            "user_id": user.data[0].get("id"),
+                            "email": user.data[0]["email"],
+                            "role_id": user.data[0]["role_id"],
+                            "role_name": "flexologist",
+                            "username": user.data[0]["username"],
+                            "status": user.data[0]["status"],
+                            "is_stretchnote_verified": is_verified,
+                        },
+                        SECRET_KEY,
+                        algorithm="HS256",
+                    )
+                    supabase.table("users").update(
+                        {"last_login": datetime.now().isoformat()}
+                    ).eq("id", user.data[0]["id"]).execute()
+                    return (
+                        jsonify(
+                            {
+                                "message": "Redirecting to stretchnote app...",
+                                "token": token,
+                            },
+                        ),
+                        403,
+                    )
                 if user.data[0]["two_factor_auth"]:
                     verification_code = generate_verification_code()
                     expiration_time = (
@@ -177,6 +255,7 @@ def login():
                             "note_taking_active"
                         ],
                         "username": user.data[0]["username"],
+                        "status": user.data[0]["status"],
                     },
                     SECRET_KEY,
                     algorithm="HS256",
@@ -531,6 +610,7 @@ def register():
                 "username": user.data[0]["username"],
                 "rpa_verified": False,
                 "note_verified": False,
+                "is_verified": False,
             },
             SECRET_KEY,
             algorithm="HS256",

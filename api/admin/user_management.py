@@ -7,6 +7,7 @@ import jwt
 import os
 import urllib.parse
 from ..utils.mail import send_email
+from ..notification import insert_notification
 
 
 routes = Blueprint("user_management", __name__)
@@ -20,7 +21,7 @@ def get_managers_users(token):
         managers = (
             supabase.table("users")
             .select("id, full_name, status, email, invited_at,created_at")
-            .eq("role_id", 4)
+            .in_("role_id", [4, 8])
             .eq("admin_id", user_data["user_id"])
             .execute()
             .data
@@ -61,18 +62,35 @@ def invite_manager(token):
             supabase.table("users")
             .select("*")
             .eq("email", email)
-            .in_("role_id", [1, 2, 3])
+            .in_("role_id", [1, 2])
             .execute()
         )
         if check_user_non_manager.data:
             return (
                 jsonify(
                     {
-                        "message": "User already exists and is not a manager",
+                        "message": "User already an admin cannot be made a manager",
                         "status": "warning",
                     }
                 ),
                 409,
+            )
+        check_user_flexologist = (
+            supabase.table("users")
+            .select("*")
+            .eq("email", email)
+            .eq("role_id", 3)
+            .execute()
+        )
+        if check_user_flexologist.data:
+            return (
+                jsonify(
+                    {
+                        "message": "User already a flexologist",
+                        "status": "warning",
+                    }
+                ),
+                403,
             )
         check_user_active = (
             supabase.table("users")
@@ -248,14 +266,25 @@ def add_password():
             )
 
         hashed_password = hash_password(password)
-        supabase.table("users").update(
-            {
-                "password": hashed_password,
-                "status": 1,
-                "full_name": full_name,
-                "created_at": datetime.now().isoformat(),
-            }
-        ).eq("email", email).execute()
+        updated_user = (
+            supabase.table("users")
+            .update(
+                {
+                    "password": hashed_password,
+                    "status": 1,
+                    "full_name": full_name,
+                    "created_at": datetime.now().isoformat(),
+                }
+            )
+            .eq("email", email)
+            .execute()
+        )
+
+        insert_notification(
+            updated_user.data[0]["id"],
+            "Welcome to Stretchnote Admin!",
+            "others",
+        )
 
         return (
             jsonify({"message": "Password added successfully", "status": "success"}),

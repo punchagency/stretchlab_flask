@@ -272,6 +272,35 @@ def webhook():
                 "type": "payment",
             }
         ).execute()
+    elif event["type"] == "customer.subscription.trial_will_end":
+        subscription = event["data"]["object"]
+        subscription_id = subscription["id"]
+        customer_id = subscription["customer"]
+        quantity = subscription["items"]["data"][0]["quantity"]
+        print(
+            f"Subscription {subscription_id} created for customer {customer_id} with {quantity} flexologists"
+        )
+        get_user = (
+            supabase.table("businesses")
+            .select("admin_id")
+            .eq("customer_id", customer_id)
+            .execute()
+        )
+        message = "Your trial will end soon."
+        if subscription["status"] == "trialing" and subscription.get("trial_end"):
+            trial_end_date = datetime.fromtimestamp(subscription["trial_end"]).strftime(
+                "%Y-%m-%d"
+            )
+            message += f" With trial ending on {trial_end_date}"
+        supabase.table("notifications").insert(
+            {
+                "user_id": get_user.data[0]["admin_id"],
+                "message": message,
+                "is_read": False,
+                "created_at": datetime.now().isoformat(),
+                "type": "payment",
+            }
+        ).execute()
 
     return jsonify({"status": "success"}), 200
 

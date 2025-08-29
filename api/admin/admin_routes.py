@@ -34,7 +34,7 @@ def invite_user(token):
             supabase.table("users")
             .select("*, roles(name)")
             .eq("id", user_data["user_id"])
-            .in_("role_id", [1, 2, 4])
+            .in_("role_id", [1, 2, 4, 8])
             .execute()
         )
         check_if_a_user_already_invited = (
@@ -114,7 +114,7 @@ def invite_user(token):
         if check_user_non_flexologist.data:
             return (
                 jsonify({"message": "User is not a flexologist", "status": "warning"}),
-                409,
+                403,
             )
         check_user_active = (
             supabase.table("users")
@@ -162,7 +162,6 @@ def invite_user(token):
                 "email", email
             ).execute()
 
-            print(email_token, "email_token")
             send_email(
                 "Invitation to Stretchnote Note taking app",
                 [email],
@@ -288,9 +287,9 @@ def get_users(token):
             employees_from_airtable = get_employee_ownwer()
             employees_from_supabase = (
                 supabase.table("users")
-                .select("*")
+                .select("id, email, full_name, status, role_id, invited_at")
                 .eq("username", user_data["username"])
-                .eq("role_id", 3)
+                .in_("role_id", [3, 8])
                 .execute()
             )
             employees_from_supabase = employees_from_supabase.data
@@ -311,7 +310,7 @@ def get_users(token):
         else:
             employees = user = (
                 supabase.table("users")
-                .select("*")
+                .select("id, email, full_name, status, role_id, invited_at")
                 .eq("username", user_data["username"])
                 .in_("role_id", [3, 8])
                 .execute()
@@ -472,6 +471,7 @@ def save_robot_config(token):
                     "number_of_locations": data["numberOfStudioLocations"],
                     "selected_locations": json.dumps(data["selectedStudioLocations"]),
                     "locations": json.dumps(data["studioLocations"]),
+                    # "excluded_names": json.dumps(data["excludedNames"]),
                     "unlogged_booking": True,
                     "run_time": "07:30",
                     "rule_arn": rule_arn,
@@ -562,7 +562,7 @@ def get_robot_config(token):
             supabase.table("users")
             .select("*")
             .eq("id", user_data["user_id"])
-            .in_("role_id", [1, 2, 4])
+            .in_("role_id", [1, 2, 4, 8])
             .execute()
         )
 
@@ -622,7 +622,7 @@ def get_rpa_history(token, config_id):
             supabase.table("users")
             .select("*")
             .eq("id", user_data["user_id"])
-            .in_("role_id", [1, 2, 4])
+            .in_("role_id", [1, 2, 4, 8])
             .execute()
         )
         if not check_user_exists_and_is_admin.data:
@@ -647,13 +647,6 @@ def get_rpa_history(token, config_id):
 
         else:
             start_date, end_date = get_start_and_end_date(duration)
-
-        # if check_user_exists_and_is_admin.data[0]["role_id"] == 1:
-        #     rpa_history = get_owner_robot_automation_notes(start_date, end_date)
-        #     rpa_unlogged_history = get_owner_robot_automation_unlogged(
-        #         start_date, end_date
-        #     )
-        # else:
 
         rpa_history = (
             supabase.table("robot_process_automation_notes_records")
@@ -726,6 +719,7 @@ def update_robot_config(token):
                 "selected_locations": json.dumps(data["selectedStudioLocations"]),
                 "number_of_locations": data["numberOfStudioLocations"],
                 "unlogged_booking": True,
+                # "excluded_names": json.dumps(data["excludedNames"]),
                 "updated_at": datetime.now().isoformat(),
             }
         ).eq("id", data["id"]).execute()

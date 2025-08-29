@@ -150,7 +150,7 @@ def number_of_subscribed(user_id):
         subscribed_flexologists = (
             supabase.table("users")
             .select("id")
-            .eq("role_id", 3)
+            .in_("role_id", [3, 8])
             .eq("status", 1)
             .neq("admin_id", user_id)
             .execute()
@@ -238,7 +238,7 @@ def get_activities(token):
 
         flexologists = (
             supabase.table("users")
-            .select("*")
+            .select("id")
             .eq("role_id", 3)
             .eq("admin_id", user_id)
             .execute()
@@ -253,7 +253,7 @@ def get_activities(token):
                 while True:
                     notes_submitted = (
                         supabase.table("clubready_bookings")
-                        .select("*")
+                        .select("flexologist_name, location")
                         .eq("submitted", True)
                         .eq("user_id", flexologist_id)
                         .range(offset, offset + limit - 1)
@@ -296,7 +296,7 @@ def get_activities(token):
             while True:
                 analysed_bookings = (
                     supabase.table("robot_process_automation_notes_records")
-                    .select("*")
+                    .select("flexologist_name, location")
                     .eq("config_id", config_id.data[0]["id"])
                     .range(offset, offset + limit - 1)
                     .execute()
@@ -361,7 +361,7 @@ def get_chart_filters(token):
             .eq("id", user_id)
             .execute()
         )
-        if check_which_user.data[0]["role_id"] not in [1, 2, 4]:
+        if check_which_user.data[0]["role_id"] not in [1, 2, 4, 8]:
             return (
                 jsonify(
                     {
@@ -372,7 +372,7 @@ def get_chart_filters(token):
                 401,
             )
 
-        if check_which_user.data[0]["role_id"] == 4:
+        if check_which_user.data[0]["role_id"] in [4, 8]:
             admin_user_id = (
                 supabase.table("users").select("admin_id").eq("id", user_id).execute()
             )
@@ -407,7 +407,7 @@ def get_chart_filters(token):
 
         business_info = (
             supabase.table("businesses")
-            .select(" note_taking_subscription_id")
+            .select("note_taking_subscription_id")
             .eq("admin_id", user_id)
             .execute()
         )
@@ -550,7 +550,7 @@ def get_second_row(token):
                     while True:
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
-                            .select("*")
+                            .select("appointment_date")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .neq("status", "No Show")
                             .gte("appointment_date", start_date)
@@ -568,7 +568,7 @@ def get_second_row(token):
                     while True:
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
-                            .select("*")
+                            .select("appointment_date")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .eq("location", location)
                             .neq("status", "No Show")
@@ -587,7 +587,7 @@ def get_second_row(token):
                     while True:
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
-                            .select("*")
+                            .select("appointment_date")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .neq("status", "No Show")
                             .gte("appointment_date", start_date)
@@ -604,7 +604,7 @@ def get_second_row(token):
                     while True:
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
-                            .select("*")
+                            .select("appointment_date")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .eq("flexologist_name", flexologist)
                             .neq("status", "No Show")
@@ -633,7 +633,7 @@ def get_second_row(token):
 
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
-                            .select("*")
+                            .select("appointment_date")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .neq("status", "No Show")
                             .gte("appointment_date", start_date)
@@ -649,7 +649,7 @@ def get_second_row(token):
 
                     flexologists = (
                         supabase.table("users")
-                        .select("*")
+                        .select("id")
                         .eq("admin_id", user_id)
                         .eq("role_id", 3)
                         .execute()
@@ -661,7 +661,7 @@ def get_second_row(token):
                         while True:
                             flexologist_bookings = (
                                 supabase.table("clubready_bookings")
-                                .select("*")
+                                .select("created_at, submitted")
                                 .eq("user_id", flexologist["id"])
                                 .gte("created_at", start_date)
                                 .lt("created_at", end_date)
@@ -682,7 +682,7 @@ def get_second_row(token):
                     while True:
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
-                            .select("*")
+                            .select("appointment_date")
                             .eq("location", location)
                             .eq("config_id", get_config_id.data[0]["id"])
                             .neq("status", "No Show")
@@ -702,7 +702,7 @@ def get_second_row(token):
                     while True:
                         location_bookings = (
                             supabase.table("clubready_bookings")
-                            .select("*")
+                            .select("created_at, submitted")
                             .eq("location", location)
                             .gte("created_at", start_date)
                             .lt("created_at", end_date)
@@ -724,7 +724,7 @@ def get_second_row(token):
 
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
-                            .select("*")
+                            .select("appointment_date")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .neq("status", "No Show")
                             .gte("appointment_date", start_date)
@@ -740,7 +740,7 @@ def get_second_row(token):
 
                     flexologists = (
                         supabase.table("users")
-                        .select("*")
+                        .select("id")
                         .eq("admin_id", user_id)
                         .eq("role_id", 3)
                         .execute()
@@ -752,7 +752,7 @@ def get_second_row(token):
                         while True:
                             flexologist_bookings = (
                                 supabase.table("clubready_bookings")
-                                .select("*")
+                                .select("created_at, submitted")
                                 .eq("user_id", flexologist["id"])
                                 .gte("created_at", start_date)
                                 .lt("created_at", end_date)
@@ -773,7 +773,7 @@ def get_second_row(token):
                     while True:
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
-                            .select("*")
+                            .select("appointment_date")
                             .eq("flexologist_name", flexologist)
                             .eq("config_id", get_config_id.data[0]["id"])
                             .neq("status", "No Show")
@@ -792,7 +792,7 @@ def get_second_row(token):
                     while True:
                         flexologist_bookings = (
                             supabase.table("clubready_bookings")
-                            .select("*")
+                            .select("created_at, submitted")
                             .eq("flexologist_name", flexologist)
                             .gte("created_at", start_date)
                             .lt("created_at", end_date)
@@ -838,7 +838,7 @@ def get_second_row(token):
                     while True:
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
-                            .select("*")
+                            .select("first_timer, note_score, appointment_date")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .eq("first_timer", first_timer)
                             .neq("status", "No Show")
@@ -873,7 +873,7 @@ def get_second_row(token):
                     while True:
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
-                            .select("*")
+                            .select("first_timer, note_score, appointment_date")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .eq("first_timer", first_timer)
                             .eq("location", location)
@@ -907,7 +907,7 @@ def get_second_row(token):
                     while True:
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
-                            .select("*")
+                            .select("first_timer, note_score, appointment_date")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .eq("first_timer", first_timer)
                             .neq("status", "No Show")
@@ -939,7 +939,7 @@ def get_second_row(token):
                     while True:
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
-                            .select("*")
+                            .select("first_timer, note_score, appointment_date")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .eq("flexologist_name", flexologist)
                             .neq("status", "No Show")
@@ -992,7 +992,7 @@ def get_second_row(token):
                     while True:
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
-                            .select("*")
+                            .select("first_timer, note_score, appointment_date")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .neq("status", "No Show")
                             .gte("appointment_date", start_date)
@@ -1024,7 +1024,7 @@ def get_second_row(token):
                     while True:
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
-                            .select("*")
+                            .select("first_timer, note_score, appointment_date")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .eq("location", location)
                             .neq("status", "No Show")
@@ -1056,7 +1056,7 @@ def get_second_row(token):
                     while True:
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
-                            .select("*")
+                            .select("first_timer, note_score, appointment_date")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .neq("status", "No Show")
                             .gte("appointment_date", start_date)
@@ -1087,7 +1087,7 @@ def get_second_row(token):
                     while True:
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
-                            .select("*")
+                            .select("first_timer, note_score, appointment_date")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .eq("flexologist_name", flexologist)
                             .neq("status", "No Show")
@@ -1144,7 +1144,7 @@ def get_third_row(token):
             supabase.table("users")
             .select("full_name, id, status, profile_picture_url, last_login")
             .eq("admin_id", user_id)
-            .eq("role_id", 3)
+            .in_("role_id", [3, 8])
             .in_("status", [1, 3, 4])
             .execute()
         )
@@ -1214,7 +1214,7 @@ def get_fourth_row(token):
         if not get_user_info.data:
             return jsonify({"error": "User not found", "status": "error"}), 404
 
-        if get_user_info.data[0]["role_id"] not in [1, 2, 4]:
+        if get_user_info.data[0]["role_id"] not in [1, 2, 4, 8]:
             return jsonify({"error": "Unauthorized", "status": "error"}), 401
 
         businesses_info = supabase.table("businesses").select("*").execute()
@@ -1233,7 +1233,7 @@ def get_fourth_row(token):
                 supabase.table("users")
                 .select("*")
                 .eq("admin_id", business["admin_id"])
-                .eq("role_id", 3)
+                .in_("role_id", [3, 8])
                 .eq("status", 1)
                 .execute()
             )
@@ -1315,7 +1315,7 @@ def get_business_info(token):
             supabase.table("users")
             .select("full_name, id, status, profile_picture_url, last_login")
             .eq("admin_id", business_id)
-            .eq("role_id", 3)
+            .in_("role_id", [3, 8])
             .execute()
         )
 

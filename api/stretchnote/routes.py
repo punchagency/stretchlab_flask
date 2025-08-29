@@ -155,6 +155,11 @@ def get_bookings(token):
     try:
         reset = request.args.get("reset")
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] not in [3, 8]:
+            return (
+                jsonify({"message": "Unauthorized", "status": "error"}),
+                401,
+            )
 
         client_datetime = get_client_datetime()
         client_date = client_datetime.strftime("%Y-%m-%d")
@@ -175,6 +180,19 @@ def get_bookings(token):
                 .eq("id", user_data["user_id"])
                 .execute()
             )
+            if (
+                user.data[0]["clubready_username"] is None
+                or user.data[0]["clubready_password"] is None
+            ):
+                return (
+                    jsonify(
+                        {
+                            "message": "Please update your clubready credentials",
+                            "status": "warning",
+                        }
+                    ),
+                    400,
+                )
             user_details = {
                 "Username": user.data[0]["clubready_username"],
                 "Password": user.data[0]["clubready_password"],
@@ -265,6 +283,11 @@ def add_notes(token):
     try:
         data = request.get_json()
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] not in [3, 8]:
+            return (
+                jsonify({"message": "Unauthorized", "status": "error"}),
+                401,
+            )
         note_data = {
             "flexologist_uid": user_data["user_id"],
             "note": data["note"],
@@ -298,6 +321,11 @@ def add_notes(token):
 def get_client_history(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] not in [3, 8]:
+            return (
+                jsonify({"message": "Unauthorized", "status": "error"}),
+                401,
+            )
         data = request.get_json()
         client_name = data["client_name"].lower()
         client_history = (
@@ -321,6 +349,11 @@ def get_client_history(token):
 def get_flexologist_history(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] not in [3, 8]:
+            return (
+                jsonify({"message": "Unauthorized", "status": "error"}),
+                401,
+            )
         flexologist_history = (
             supabase.table("clubready_bookings")
             .select("*")
@@ -345,6 +378,11 @@ def get_flexologist_history(token):
 def get_notes(token, booking_id):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] not in [3, 8]:
+            return (
+                jsonify({"message": "Unauthorized", "status": "error"}),
+                401,
+            )
         notes = (
             supabase.table("booking_notes")
             .select("*")
@@ -366,6 +404,11 @@ def get_notes(token, booking_id):
 def get_ai_logic(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] not in [3, 8]:
+            return (
+                jsonify({"message": "Unauthorized", "status": "error"}),
+                401,
+            )
         user_id = user_data["user_id"]
         flexologist_name = (
             supabase.table("users")
@@ -483,6 +526,11 @@ def get_ai_logic(token):
 def get_questions(token, booking_id):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] not in [3, 8]:
+            return (
+                jsonify({"message": "Unauthorized", "status": "error"}),
+                401,
+            )
         notes = (
             supabase.table("booking_notes")
             .select("*")
@@ -549,6 +597,11 @@ def get_questions(token, booking_id):
 def submit_notes_route(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] not in [3, 8]:
+            return (
+                jsonify({"message": "Unauthorized", "status": "error"}),
+                401,
+            )
         data = request.get_json()
         period = data["period"]
         notes = data["notes"]
