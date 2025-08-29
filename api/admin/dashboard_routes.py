@@ -195,6 +195,17 @@ def number_of_subscribed(user_id):
 def get_first_row(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
+
         show_others = user_data["role_id"] == 1
         bookings_info = get_bookings_info(token)
         balance_info = get_balance_for_month()
@@ -229,6 +240,16 @@ def get_first_row(token):
 def get_activities(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
         user_id = (
             supabase.table("users")
             .select("admin_id")
@@ -351,6 +372,16 @@ def get_activities(token):
 def get_chart_filters(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
         user_id = user_data["user_id"]
 
         filter_by = request.args.get("filter_by", None)
@@ -487,6 +518,16 @@ def get_chart_filters(token):
 def get_second_row(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
         user_id = (
             supabase.table("users")
             .select("admin_id")
@@ -1130,6 +1171,16 @@ def get_second_row(token):
 def get_third_row(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
         duration = request.args.get("duration", "this_year")
 
         user_id = (
@@ -1209,6 +1260,16 @@ def get_third_row(token):
 def get_fourth_row(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
         user_id = user_data["user_id"]
         get_user_info = supabase.table("users").select("*").eq("id", user_id).execute()
         if not get_user_info.data:
@@ -1278,6 +1339,16 @@ def get_fourth_row(token):
 def get_business_info(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
         user_id = user_data["user_id"]
         data = request.json
         business_id = data["business_id"]

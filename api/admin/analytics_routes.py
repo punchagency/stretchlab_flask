@@ -14,6 +14,16 @@ routes = Blueprint("analytics_routes", __name__)
 def rpa_audit(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
         duration = request.args.get("duration")
         location = request.args.get("location")
         filter_metric = request.args.get("filter_metric")
@@ -494,6 +504,16 @@ def rpa_audit(token):
 def get_rpa_audit_details(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
         user_id = (
             supabase.table("users")
             .select("admin_id")
@@ -842,6 +862,16 @@ def get_rpa_audit_details(token):
 def get_ranking_analytics(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
         user_id = (
             supabase.table("users")
             .select("admin_id")
@@ -1361,6 +1391,16 @@ def get_ranking_analytics(token):
 def get_location_analytics(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
         user_id = (
             supabase.table("users")
             .select("admin_id")

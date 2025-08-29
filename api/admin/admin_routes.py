@@ -283,6 +283,16 @@ def update_user_status(token):
 def get_users(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
         if user_data["role_id"] == 1:
             employees_from_airtable = get_employee_ownwer()
             employees_from_supabase = (
@@ -327,6 +337,16 @@ def get_users(token):
 def validate_login(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
         data = request.get_json()
 
         validate_login = clubready_admin_login(data)

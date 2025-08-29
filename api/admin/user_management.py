@@ -18,6 +18,16 @@ routes = Blueprint("user_management", __name__)
 def get_managers_users(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
         managers = (
             supabase.table("users")
             .select("id, full_name, status, email, invited_at,created_at")

@@ -282,6 +282,16 @@ def verify_two_factor_disable(token):
 def resend_verification_code(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
 
         user = (
             supabase.table("users").select("*").eq("id", user_data["user_id"]).execute()
@@ -356,6 +366,16 @@ def resend_verification_code(token):
 def get_two_factor_status(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
 
         user = (
             supabase.table("users")
@@ -391,6 +411,16 @@ def get_two_factor_status(token):
 def change_profile_picture(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
 
         if "profile_picture" not in request.files:
             return (
@@ -459,6 +489,16 @@ def change_profile_picture(token):
 def delete_profile_picture(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
         user = (
             supabase.table("users")
             .select("profile_picture")
@@ -506,6 +546,16 @@ def delete_profile_picture(token):
 def get_profile_picture(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
         user = (
             supabase.table("users")
             .select("profile_picture_url")
@@ -537,6 +587,16 @@ def get_profile_picture(token):
 def change_password(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
         data = request.get_json()
         if not data.get("old_password"):
             return (
@@ -575,6 +635,16 @@ def change_password(token):
 def change_email_initiate(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
         data = request.get_json()
         if not data.get("new_email"):
             return (
@@ -635,6 +705,16 @@ def change_email_initiate(token):
 def verify_change_email(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
         data = request.get_json()
         if not data.get("new_email"):
             return (
@@ -752,6 +832,16 @@ def verify_change_email(token):
 def update_permissions(token):
     try:
         user_data = decode_jwt_token(token)
+        if user_data["role_id"] == 3:
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
         data = request.get_json()
         email = data.get("email")
         position = data.get("position")
