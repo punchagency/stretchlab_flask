@@ -872,6 +872,7 @@ def get_rpa_history(token, config_id):
             supabase.table("robot_process_automation_notes_records")
             .select("*")
             .eq("config_id", config_id)
+            .eq("first_timer", "NO")
             .gte("appointment_date", start_date)
             .lt("appointment_date", end_date)
             .execute()
