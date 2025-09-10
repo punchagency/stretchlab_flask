@@ -14,16 +14,6 @@ routes = Blueprint("analytics_routes", __name__)
 def rpa_audit(token):
     try:
         user_data = decode_jwt_token(token)
-        if user_data["role_id"] == 3:
-            return (
-                jsonify(
-                    {
-                        "error": "You are not authorized to see this page",
-                        "status": "error",
-                    }
-                ),
-                401,
-            )
         duration = request.args.get("duration")
         location = request.args.get("location")
         filter_metric = request.args.get("filter_metric")
@@ -269,16 +259,24 @@ def rpa_audit(token):
             )
         )
 
+        # Mapping from old opportunity names to new ones for backward compatibility
+        opportunity_mapping = {
+            "Session Note: Problem Presented": "Problem Presented",
+            "Session Note: What was worked On": "Current Session Activity",
+            "Session Note: Tension Level & Frequency": "Current Session Activity",
+            "Session Note: Prescribed Action": "Next Session Focus",
+            "Session Note: Homework": "Homework",
+        }
+
         # Hard coding for now would be better if i add it to the db
         if filter_metric in ["first", "all"]:
             opportunities = [
                 "Needs Analysis: Deep Emotional Reason(Why)",
                 "Needs Analysis: Physiscal Need",
-                "Session Note: Problem Presented",
-                "Session Note: What was worked On",
-                "Session Note: Tension Level & Frequency",
-                "Session Note: Prescribed Action",
-                "Session Note: Homework",
+                "Problem Presented",
+                "Current Session Activity",
+                "Next Session Focus",
+                "Homework",
                 "Quality: No Future Bookings",
                 "Quality: Missing Homework",
                 "Quality: Missing Waiver",
@@ -286,11 +284,10 @@ def rpa_audit(token):
             ]
         else:
             opportunities = [
-                "Session Note: Problem Presented",
-                "Session Note: What was worked On",
-                "Session Note: Tension Level & Frequency",
-                "Session Note: Prescribed Action",
-                "Session Note: Homework",
+                "Problem Presented",
+                "Current Session Activity",
+                "Next Session Focus",
+                "Homework",
             ]
 
         notes_with_opportunities = []
@@ -333,8 +330,18 @@ def rpa_audit(token):
             ]
 
             for opportunity in opportunities:
+                # Check if the new opportunity name is present
                 if opportunity.lower() in lowered_opps:
                     opportunities_count[opportunity] += 1
+                else:
+                    # Check if any old opportunity names that map to this new one are present
+                    old_names = [
+                        old.lower()
+                        for old, new in opportunity_mapping.items()
+                        if new.lower() == opportunity.lower()
+                    ]
+                    if any(old_name.lower() in lowered_opps for old_name in old_names):
+                        opportunities_count[opportunity] += 1
 
         for opportunity in opportunities:
             opportunities_count[opportunity] = round(
@@ -504,16 +511,6 @@ def rpa_audit(token):
 def get_rpa_audit_details(token):
     try:
         user_data = decode_jwt_token(token)
-        if user_data["role_id"] == 3:
-            return (
-                jsonify(
-                    {
-                        "error": "You are not authorized to see this page",
-                        "status": "error",
-                    }
-                ),
-                401,
-            )
         user_id = (
             supabase.table("users")
             .select("admin_id")
@@ -545,6 +542,8 @@ def get_rpa_audit_details(token):
             .execute()
         ).data
 
+        print(start_date, end_date)
+
         if not config_id:
             return jsonify({"error": "No RPA config found", "status": "error"}), 400
 
@@ -560,6 +559,7 @@ def get_rpa_audit_details(token):
                         "flexologist_name, location, first_timer, note_score, appointment_date, note_oppurtunities"
                     )
                     .eq("config_id", config_id)
+                    .eq("first_timer", "NO")
                     .neq("status", "No Show")
                     .gte("appointment_date", start_date)
                     .lt("appointment_date", end_date)
@@ -580,6 +580,7 @@ def get_rpa_audit_details(token):
                     )
                     .eq("config_id", config_id)
                     .eq("location", location)
+                    .eq("first_timer", "NO")
                     .neq("status", "No Show")
                     .gte("appointment_date", start_date)
                     .lt("appointment_date", end_date)
@@ -600,6 +601,7 @@ def get_rpa_audit_details(token):
                     )
                     .eq("config_id", config_id)
                     .eq("flexologist_name", flexologist_name)
+                    .eq("first_timer", "NO")
                     .neq("status", "No Show")
                     .gte("appointment_date", start_date)
                     .lt("appointment_date", end_date)
@@ -621,6 +623,7 @@ def get_rpa_audit_details(token):
                     .eq("config_id", config_id)
                     .eq("flexologist_name", flexologist_name)
                     .eq("location", location)
+                    .eq("first_timer", "NO")
                     .neq("status", "No Show")
                     .gte("appointment_date", start_date)
                     .lt("appointment_date", end_date)
@@ -644,6 +647,8 @@ def get_rpa_audit_details(token):
                 ),
                 200,
             )
+
+        print(len(rpa_notes))
 
         notes_with_opportunities = []
         locations_with_opportunity_count = {}
@@ -689,6 +694,15 @@ def get_rpa_audit_details(token):
                     total_flexologist_note[note["flexologist_name"]] = 0
                 total_flexologist_note[note["flexologist_name"]] += 1
 
+        # Mapping from old opportunity names to new ones for backward compatibility
+        opportunity_mapping = {
+            "Session Note: Problem Presented": "Problem Presented",
+            "Session Note: What was worked On": "Current Session Activity",
+            "Session Note: Tension Level & Frequency": "Current Session Activity",
+            "Session Note: Prescribed Action": "Next Session Focus",
+            "Session Note: Homework": "Homework",
+        }
+
         notes_with_particular_opportunity = []
         locations_with_particular_opportunity_count = {}
         flexologist_with_particular_opportunity_count = {}
@@ -699,7 +713,21 @@ def get_rpa_audit_details(token):
                 for item in json.loads(note["note_oppurtunities"])
                 if isinstance(item, str)
             ]
-            if opportunity.lower() in lowered_opps:
+
+            # Check if the requested opportunity (new name) is present, or any old names that map to it
+            opportunity_found = opportunity.lower() in lowered_opps
+            if not opportunity_found:
+                # Check if any old opportunity names that map to this new one are present
+                old_names = [
+                    old.lower()
+                    for old, new in opportunity_mapping.items()
+                    if new.lower() == opportunity.lower()
+                ]
+                opportunity_found = any(
+                    old_name.lower() in lowered_opps for old_name in old_names
+                )
+
+            if opportunity_found:
                 notes_with_particular_opportunity.append(note)
                 if note["location"] not in locations_with_particular_opportunity_count:
                     locations_with_particular_opportunity_count[note["location"]] = 0
@@ -822,9 +850,24 @@ def get_rpa_audit_details(token):
                                 location, 0
                             ),
                             "total_count": total_location_notes.get(location, 0),
+                            # "total_count": locations_with_opportunity_count.get(
+                            #     location, 0
+                            # ),
                             "percentage_note_quality": round(
-                                get_total_quality_location_notes_percentage(location), 2
+                                (
+                                    (
+                                        locations_with_particular_opportunity_count.get(
+                                            location, 0
+                                        )
+                                    )
+                                    / total_location_notes.get(location, 0)
+                                )
+                                * 100,
+                                2,
                             ),
+                            # "percentage_note_quality": round(
+                            #     get_total_quality_location_notes_percentage(location), 2
+                            # ),
                         }
                         for location, percentage in sorted_locations_with_particular_opportunity_percentage
                     ],
@@ -836,12 +879,27 @@ def get_rpa_audit_details(token):
                                 flexologist, 0
                             ),
                             "total_count": total_flexologist_note.get(flexologist, 0),
+                            # "total_count": flexologist_with_opportunity_count.get(
+                            #     flexologist, 0
+                            # ),
                             "percentage_note_quality": round(
-                                get_total_quality_flexologist_notes_percentage(
-                                    flexologist
-                                ),
+                                (
+                                    (
+                                        flexologist_with_particular_opportunity_count.get(
+                                            flexologist, 0
+                                        )
+                                    )
+                                    / total_flexologist_note.get(flexologist, 0)
+                                )
+                                * 100,
                                 2,
                             ),
+                            # "percentage_note_quality": round(
+                            #     get_total_quality_flexologist_notes_percentage(
+                            #         flexologist
+                            #     ),
+                            #     2,
+                            # ),
                         }
                         for flexologist, percentage in sorted_flexologist_with_particular_opportunity_percentage
                     ],
@@ -862,16 +920,6 @@ def get_rpa_audit_details(token):
 def get_ranking_analytics(token):
     try:
         user_data = decode_jwt_token(token)
-        if user_data["role_id"] == 3:
-            return (
-                jsonify(
-                    {
-                        "error": "You are not authorized to see this page",
-                        "status": "error",
-                    }
-                ),
-                401,
-            )
         user_id = (
             supabase.table("users")
             .select("admin_id")
@@ -879,6 +927,7 @@ def get_ranking_analytics(token):
             .execute()
         ).data[0]["admin_id"]
         data = request.json
+        # rank_by = data.get("rank_by", "location")
         metric = data.get("metric", "total_visits")
         filter_metric = data.get("filter_metric", "all")
         duration = data["duration"]
@@ -961,6 +1010,7 @@ def get_ranking_analytics(token):
                     ),
                     200,
                 )
+            # filter_by = "location" if rank_by == "location" else "flexologist_name"
             count = {}
             count_flex = {}
             for note in rpa_notes:
@@ -1120,6 +1170,7 @@ def get_ranking_analytics(token):
                 flex_percentages.items(), key=lambda item: item[1]["pct"], reverse=True
             )
 
+            # Calculate overall percentage
             total_robot_bookings = len(all_notes)
             total_app_submitted = len(app_submitted)
             overall_percentage = round(
@@ -1131,6 +1182,10 @@ def get_ranking_analytics(token):
                 2,
             )
 
+            # if rank_by == "location":
+            #     data = [{"name": loc, "count": pct} for loc, pct in sorted_locations]
+            # else:
+            #     data = [{"name": flex, "count": pct} for flex, pct in sorted_flex]
             data = [
                 {"name": loc, "count": data_dict["pct"], "total": data_dict["total"]}
                 for loc, data_dict in sorted_locations
@@ -1140,6 +1195,7 @@ def get_ranking_analytics(token):
                 for flex, data_dict in sorted_flex
             ]
 
+            # Add overall percentage to data or response
             return (
                 jsonify(
                     {
@@ -1192,6 +1248,8 @@ def get_ranking_analytics(token):
                     ),
                     200,
                 )
+
+            # filter_by = "location" if rank_by == "location" else "flexologist_name"
 
             group_sums = {}
             group_counts = {}
@@ -1302,6 +1360,8 @@ def get_ranking_analytics(token):
                     200,
                 )
 
+            # filter_by = "location" if rank_by == "location" else "flexologist_name"
+
             group_sums = {}
             group_counts = {}
             group_sums_flex = {}
@@ -1391,16 +1451,6 @@ def get_ranking_analytics(token):
 def get_location_analytics(token):
     try:
         user_data = decode_jwt_token(token)
-        if user_data["role_id"] == 3:
-            return (
-                jsonify(
-                    {
-                        "error": "You are not authorized to see this page",
-                        "status": "error",
-                    }
-                ),
-                401,
-            )
         user_id = (
             supabase.table("users")
             .select("admin_id")
@@ -1408,6 +1458,7 @@ def get_location_analytics(token):
             .execute()
         ).data[0]["admin_id"]
         data = request.json
+        # rank_by = data.get("rank_by", "location")
         location = data.get("location", None)
         if not location:
             return jsonify({"error": "Location is required", "status": "error"}), 400
@@ -1425,6 +1476,8 @@ def get_location_analytics(token):
 
         if not start_date or not end_date:
             return jsonify({"error": "Invalid duration", "status": "error"}), 400
+
+        print(start_date, end_date, "start_date, end_date")
 
         config_id = (
             supabase.table("robot_process_automation_config")
@@ -1495,7 +1548,7 @@ def get_location_analytics(token):
                     ),
                     200,
                 )
-
+            # filter_by = "location" if rank_by == "location" else "flexologist_name"
             count_flex = {}
             for note in rpa_notes:
                 if note["flexologist_name"] not in count_flex:
@@ -1624,6 +1677,7 @@ def get_location_analytics(token):
                 flex_percentages.items(), key=lambda item: item[1]["pct"], reverse=True
             )
 
+            # Calculate overall percentage
             total_robot_bookings = len(all_notes)
             total_app_submitted = len(app_submitted)
             overall_percentage = round(
@@ -1635,11 +1689,16 @@ def get_location_analytics(token):
                 2,
             )
 
+            # if rank_by == "location":
+            #     data = [{"name": loc, "count": pct} for loc, pct in sorted_locations]
+            # else:
+            #     data = [{"name": flex, "count": pct} for flex, pct in sorted_flex]
             data = [
                 {"name": flex, "count": data_dict["pct"], "total": data_dict["total"]}
                 for flex, data_dict in sorted_flex
             ]
 
+            # Add overall percentage to data or response
             return (
                 jsonify(
                     {
@@ -1692,6 +1751,8 @@ def get_location_analytics(token):
                     ),
                     200,
                 )
+
+            # filter_by = "location" if rank_by == "location" else "flexologist_name"
 
             group_sums_flex = {}
             group_counts_flex = {}
@@ -1775,6 +1836,8 @@ def get_location_analytics(token):
                     ),
                     200,
                 )
+
+            # filter_by = "location" if rank_by == "location" else "flexologist_name"
 
             group_sums_flex = {}
             group_counts_flex = {}

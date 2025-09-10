@@ -1,4 +1,4 @@
-from flask import request, jsonify, Blueprint
+from flask import request, jsonify, Blueprint, current_app
 from ..utils.middleware import require_bearer_token
 from ..utils.utils import (
     decode_jwt_token,
@@ -20,9 +20,163 @@ from ..utils.robot import create_s3_bucket, create_user_rule, update_user_rule_s
 from ..notification import insert_notification
 import json
 import jwt
+import threading
 import os
 
 routes = Blueprint("admin", __name__)
+
+
+def process_single_email(app, email, username, admin_id, resend):
+    """Process a single email invitation"""
+    try:
+        with app.app_context():
+            supabase = app.config["SUPABASE"]
+
+            if not resend:
+                check_user_exists = (
+                    supabase.table("users").select("*").eq("email", email).execute()
+                )
+                if check_user_exists.data:
+                    return {
+                        "email": email,
+                        "status": "success",
+                        "message": "Skipping invitation for existing user",
+                    }
+                new_user = (
+                    supabase.table("users")
+                    .insert(
+                        {
+                            "email": email.lower(),
+                            "status": 3,
+                            "role_id": 3,
+                            "username": username,
+                            "admin_id": admin_id,
+                            "password": "empty",
+                            "invited_at": datetime.now().isoformat(),
+                        }
+                    )
+                    .execute()
+                )
+                new_user = new_user.data[0]
+                if new_user:
+                    email_token = jwt.encode(
+                        {"email": email},
+                        os.getenv("JWT_SECRET_KEY"),
+                        algorithm="HS256",
+                    )
+                    status = send_email(
+                        "Invitation to Stretchnote Note taking app",
+                        [email],
+                        None,
+                        f"<html><body><p>You have been invited to the <a href='https://www.stretchnote.com/verification?token={email_token}'>Stretchnote Note taking app</a>. Click the link to verify your email and complete your registration.</p><a style='color: #000; text-decoration: none; padding: 10px 20px; background-color: #007bff; border-radius: 5px; margin-top: 20px;' href='https://www.stretchnote.com/verification?token={email_token}'>Verify Email</a></body></html>",
+                    )
+                    return {
+                        "email": email,
+                        "status": "success",
+                        "message": "User invited successfully",
+                    }
+                else:
+                    return {
+                        "email": email,
+                        "status": "error",
+                        "message": "Failed to create user",
+                    }
+            else:
+                check_user_invited = (
+                    supabase.table("users")
+                    .select("*")
+                    .eq("email", email)
+                    .eq("status", 3)
+                    .eq("role_id", 3)
+                    .execute()
+                )
+                if check_user_invited.data:
+                    email_token = jwt.encode(
+                        {"email": email},
+                        os.getenv("JWT_SECRET_KEY"),
+                        algorithm="HS256",
+                    )
+                    supabase.table("users").update({"password": "empty"}).eq(
+                        "email", email
+                    ).execute()
+
+                    print(f"Resending invitation to: {email}")
+                    send_email(
+                        "Invitation to Stretchnote Note taking app",
+                        [email],
+                        None,
+                        f"<html><body><p>You have been invited to the <a href='https://www.stretchnote.com/verification?token={email_token}'>Stretchnote Note taking app</a>. Click the link to verify your email and complete your registration.</p><a style='color: #000; text-decoration: none; padding: 10px 20px; background-color: #007bff; border-radius: 5px; margin-top: 20px;' href='https://www.stretchnote.com/verification?token={email_token}'>Verify Email</a></body></html>",
+                    )
+                    return {
+                        "email": email,
+                        "status": "success",
+                        "message": "Invitation resent successfully",
+                    }
+                else:
+                    return {
+                        "email": email,
+                        "status": "error",
+                        "message": "User not found for resend",
+                    }
+
+            insert_notification(
+                admin_id,
+                f"Invitation {resend and 'resent' or 'sent'} to {email} successfully",
+                "note taking",
+            )
+
+    except Exception as e:
+        logging.error(f"Failed to process email {email}: {str(e)}")
+        return {"email": email, "status": "error", "message": str(e)}
+
+
+def background_bulk_invite_users(app, username, admin_id, emails, resend):
+    """Multi-threaded bulk invite processor"""
+    import concurrent.futures
+    import math
+
+    try:
+        num_workers = 3
+
+        logging.info(
+            f"Starting bulk invite with {num_workers} workers for {len(emails)} emails"
+        )
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+            future_to_email = {
+                executor.submit(
+                    process_single_email, app, email, username, admin_id, resend
+                ): email
+                for email in emails
+            }
+
+            results = []
+            for future in concurrent.futures.as_completed(future_to_email):
+                email = future_to_email[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                    if result["status"] == "success":
+                        logging.info(f"Successfully processed: {email}")
+                    else:
+                        logging.warning(
+                            f"Failed to process {email}: {result['message']}"
+                        )
+                except Exception as exc:
+                    logging.error(f"Exception processing {email}: {exc}")
+                    results.append(
+                        {"email": email, "status": "error", "message": str(exc)}
+                    )
+
+        successful = sum(1 for r in results if r["status"] == "success")
+        failed = len(results) - successful
+        logging.info(f"Bulk invite completed: {successful} successful, {failed} failed")
+
+        return results
+
+    except Exception as e:
+        logging.error(f"Background task bulk invite users failed: {str(e)}")
+        return [{"status": "error", "message": str(e)}]
 
 
 @routes.route("/invite-user", methods=["POST"])
@@ -245,6 +399,52 @@ def invite_user(token):
                 )
     except Exception as e:
         logging.error(f"Error in POST api/admin/process/invite-user: {str(e)}")
+        return jsonify({"error": str(e), "status": "error"}), 500
+
+
+@routes.route("/bulk-invite-users", methods=["POST"])
+@require_bearer_token
+def bulk_invite_users(token):
+    try:
+        user_data = decode_jwt_token(token)
+        data = request.get_json()
+        get_user_details = (
+            supabase.table("users")
+            .select("*")
+            .eq("id", user_data["user_id"])
+            .in_("role_id", [1, 2, 4, 8])
+            .execute()
+        )
+        if not get_user_details.data:
+            return jsonify({"message": "User is not an admin", "status": "error"}), 401
+        emails = data.get("emails")
+        resend = data.get("resend", False)
+        if not emails:
+            return jsonify({"message": "Emails are required", "status": "error"}), 400
+
+        thread = threading.Thread(
+            target=background_bulk_invite_users,
+            args=(
+                current_app._get_current_object(),
+                get_user_details.data[0]["username"],
+                get_user_details.data[0]["admin_id"],
+                emails,
+                resend,
+            ),
+        )
+        thread.start()
+
+        return (
+            jsonify(
+                {
+                    "message": f"Bulk invitation initiated for {len(emails)} users. You will be notified when the users are invited",
+                    "status": "success",
+                }
+            ),
+            202,
+        )
+    except Exception as e:
+        logging.error(f"Error in POST api/admin/process/bulk-invite-users: {str(e)}")
         return jsonify({"error": str(e), "status": "error"}), 500
 
 

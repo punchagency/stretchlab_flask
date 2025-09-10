@@ -438,7 +438,7 @@ def get_chart_filters(token):
 
         business_info = (
             supabase.table("businesses")
-            .select("note_taking_subscription_id")
+            .select("note_taking_active")
             .eq("admin_id", user_id)
             .execute()
         )
@@ -481,7 +481,7 @@ def get_chart_filters(token):
             ]
 
         if (
-            business_info.data[0]["note_taking_subscription_id"]
+            business_info.data[0]["note_taking_active"]
             or check_which_user.data[0]["role_id"] == 1
         ):
             filters = [
@@ -588,6 +588,7 @@ def get_second_row(token):
 
             if location:
                 if location == "all":
+
                     while True:
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
@@ -659,6 +660,7 @@ def get_second_row(token):
                         if len(data) < limit:
                             break
                         offset += limit
+
             data = handle_total_visits(duration, total_visits, start_date, end_date)
             return jsonify({"status": "success", "data": data["data"]}), 200
 
@@ -702,7 +704,7 @@ def get_second_row(token):
                         while True:
                             flexologist_bookings = (
                                 supabase.table("clubready_bookings")
-                                .select("created_at, submitted")
+                                .select("created_at, submitted,booking_time")
                                 .eq("user_id", flexologist["id"])
                                 .gte("created_at", start_date)
                                 .lt("created_at", end_date)
@@ -719,6 +721,7 @@ def get_second_row(token):
                             if len(flexologist_bookings.data) < limit:
                                 break
                             offset += limit
+
                 else:
                     while True:
                         filter_data = (
@@ -743,7 +746,7 @@ def get_second_row(token):
                     while True:
                         location_bookings = (
                             supabase.table("clubready_bookings")
-                            .select("created_at, submitted")
+                            .select("created_at, submitted,booking_time")
                             .eq("location", location)
                             .gte("created_at", start_date)
                             .lt("created_at", end_date)
@@ -793,7 +796,7 @@ def get_second_row(token):
                         while True:
                             flexologist_bookings = (
                                 supabase.table("clubready_bookings")
-                                .select("created_at, submitted")
+                                .select("created_at, submitted,booking_time")
                                 .eq("user_id", flexologist["id"])
                                 .gte("created_at", start_date)
                                 .lt("created_at", end_date)
@@ -833,7 +836,7 @@ def get_second_row(token):
                     while True:
                         flexologist_bookings = (
                             supabase.table("clubready_bookings")
-                            .select("created_at, submitted")
+                            .select("created_at, submitted,booking_time")
                             .eq("flexologist_name", flexologist)
                             .gte("created_at", start_date)
                             .lt("created_at", end_date)
@@ -900,17 +903,30 @@ def get_second_row(token):
                             if booking["note_score"] != "N/A"
                             else 0
                         )
-                        if score > 21:
-                            print("score", score)
-                        percentage = round(
-                            (score / (18.0 if booking["first_timer"] == "YES" else 4.0))
-                            * 100,
-                            2,
-                        )
+
+                        if booking["appointment_date"] > "2025-09-08":
+                            percentage = round(
+                                (
+                                    score
+                                    / (17.0 if booking["first_timer"] == "YES" else 4.0)
+                                )
+                                * 100,
+                                2,
+                            )
+                        else:
+                            percentage = round(
+                                (
+                                    score
+                                    / (18.0 if booking["first_timer"] == "YES" else 4.0)
+                                )
+                                * 100,
+                                2,
+                            )
                         booking["percentage"] = percentage
                         all_bookings.append(booking)
 
                 else:
+
                     while True:
                         filter_data = (
                             supabase.table("robot_process_automation_notes_records")
@@ -936,11 +952,24 @@ def get_second_row(token):
                             if booking["note_score"] != "N/A"
                             else 0
                         )
-                        percentage = round(
-                            (score / (18.0 if booking["first_timer"] == "YES" else 4.0))
-                            * 100,
-                            2,
-                        )
+                        if booking["appointment_date"] > "2025-09-08":
+                            percentage = round(
+                                (
+                                    score
+                                    / (17.0 if booking["first_timer"] == "YES" else 4.0)
+                                )
+                                * 100,
+                                2,
+                            )
+                        else:
+                            percentage = round(
+                                (
+                                    score
+                                    / (18.0 if booking["first_timer"] == "YES" else 4.0)
+                                )
+                                * 100,
+                                2,
+                            )
                         booking["percentage"] = percentage
                         all_bookings.append(booking)
             else:
@@ -969,11 +998,24 @@ def get_second_row(token):
                             if booking["note_score"] != "N/A"
                             else 0
                         )
-                        percentage = round(
-                            (score / (18.0 if booking["first_timer"] == "YES" else 4.0))
-                            * 100,
-                            2,
-                        )
+                        if booking["appointment_date"] > "2025-09-08":
+                            percentage = round(
+                                (
+                                    score
+                                    / (17.0 if booking["first_timer"] == "YES" else 4.0)
+                                )
+                                * 100,
+                                2,
+                            )
+                        else:
+                            percentage = round(
+                                (
+                                    score
+                                    / (18.0 if booking["first_timer"] == "YES" else 4.0)
+                                )
+                                * 100,
+                                2,
+                            )
                         booking["percentage"] = percentage
                         all_bookings.append(booking)
                 else:
@@ -1001,11 +1043,25 @@ def get_second_row(token):
                             if booking["note_score"] != "N/A"
                             else 0
                         )
-                        percentage = round(
-                            (score / (18.0 if booking["first_timer"] == "YES" else 4.0))
-                            * 100,
-                            2,
-                        )
+                        if booking["appointment_date"] > "2025-09-08":
+                            percentage = round(
+                                (
+                                    score
+                                    / (17.0 if booking["first_timer"] == "YES" else 4.0)
+                                )
+                                * 100,
+                                2,
+                            )
+                        else:
+                            percentage = round(
+                                (
+                                    score
+                                    / (18.0 if booking["first_timer"] == "YES" else 4.0)
+                                )
+                                * 100,
+                                2,
+                            )
+
                         booking["percentage"] = percentage
                         all_bookings.append(booking)
 
@@ -1036,6 +1092,7 @@ def get_second_row(token):
                             .select("first_timer, note_score, appointment_date")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .neq("status", "No Show")
+                            .eq("first_timer", "NO")
                             .gte("appointment_date", start_date)
                             .lt("appointment_date", end_date)
                             .range(offset, offset + limit - 1)
@@ -1053,11 +1110,24 @@ def get_second_row(token):
                             if booking["note_score"] != "N/A"
                             else 0
                         )
-                        percentage = round(
-                            (score / (18.0 if booking["first_timer"] == "YES" else 4.0))
-                            * 100,
-                            2,
-                        )
+                        if booking["appointment_date"] > "2025-09-08":
+                            percentage = round(
+                                (
+                                    score
+                                    / (17.0 if booking["first_timer"] == "YES" else 4.0)
+                                )
+                                * 100,
+                                2,
+                            )
+                        else:
+                            percentage = round(
+                                (
+                                    score
+                                    / (18.0 if booking["first_timer"] == "YES" else 4.0)
+                                )
+                                * 100,
+                                2,
+                            )
                         booking["percentage"] = percentage
                         all_bookings.append(booking)
 
@@ -1068,6 +1138,7 @@ def get_second_row(token):
                             .select("first_timer, note_score, appointment_date")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .eq("location", location)
+                            .eq("first_timer", "NO")
                             .neq("status", "No Show")
                             .gte("appointment_date", start_date)
                             .lt("appointment_date", end_date)
@@ -1085,11 +1156,24 @@ def get_second_row(token):
                             if booking["note_score"] != "N/A"
                             else 0
                         )
-                        percentage = round(
-                            (score / (18.0 if booking["first_timer"] == "YES" else 4.0))
-                            * 100,
-                            2,
-                        )
+                        if booking["appointment_date"] > "2025-09-08":
+                            percentage = round(
+                                (
+                                    score
+                                    / (17.0 if booking["first_timer"] == "YES" else 4.0)
+                                )
+                                * 100,
+                                2,
+                            )
+                        else:
+                            percentage = round(
+                                (
+                                    score
+                                    / (18.0 if booking["first_timer"] == "YES" else 4.0)
+                                )
+                                * 100,
+                                2,
+                            )
                         booking["percentage"] = percentage
                         all_bookings.append(booking)
             else:
@@ -1099,6 +1183,7 @@ def get_second_row(token):
                             supabase.table("robot_process_automation_notes_records")
                             .select("first_timer, note_score, appointment_date")
                             .eq("config_id", get_config_id.data[0]["id"])
+                            .eq("first_timer", "NO")
                             .neq("status", "No Show")
                             .gte("appointment_date", start_date)
                             .lt("appointment_date", end_date)
@@ -1117,11 +1202,24 @@ def get_second_row(token):
                             if booking["note_score"] != "N/A"
                             else 0
                         )
-                        percentage = round(
-                            (score / (18.0 if booking["first_timer"] == "YES" else 4.0))
-                            * 100,
-                            2,
-                        )
+                        if booking["appointment_date"] > "2025-09-08":
+                            percentage = round(
+                                (
+                                    score
+                                    / (17.0 if booking["first_timer"] == "YES" else 4.0)
+                                )
+                                * 100,
+                                2,
+                            )
+                        else:
+                            percentage = round(
+                                (
+                                    score
+                                    / (18.0 if booking["first_timer"] == "YES" else 4.0)
+                                )
+                                * 100,
+                                2,
+                            )
                         booking["percentage"] = percentage
                         all_bookings.append(booking)
                 else:
@@ -1131,6 +1229,7 @@ def get_second_row(token):
                             .select("first_timer, note_score, appointment_date")
                             .eq("config_id", get_config_id.data[0]["id"])
                             .eq("flexologist_name", flexologist)
+                            .eq("first_timer", "NO")
                             .neq("status", "No Show")
                             .gte("appointment_date", start_date)
                             .lt("appointment_date", end_date)
@@ -1149,11 +1248,24 @@ def get_second_row(token):
                             if booking["note_score"] != "N/A"
                             else 0
                         )
-                        percentage = round(
-                            (score / (18.0 if booking["first_timer"] == "YES" else 4.0))
-                            * 100,
-                            2,
-                        )
+                        if booking["appointment_date"] > "2025-09-08":
+                            percentage = round(
+                                (
+                                    score
+                                    / (17.0 if booking["first_timer"] == "YES" else 4.0)
+                                )
+                                * 100,
+                                2,
+                            )
+                        else:
+                            percentage = round(
+                                (
+                                    score
+                                    / (18.0 if booking["first_timer"] == "YES" else 4.0)
+                                )
+                                * 100,
+                                2,
+                            )
                         booking["percentage"] = percentage
                         all_bookings.append(booking)
 
