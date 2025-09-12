@@ -97,9 +97,28 @@ def clubready_validate(token):
                             .eq("type", "flexologist")
                             .execute()
                         )
+                        coupon = check_subscription.data[0].get("coupon", None)
+                        if coupon:
+                            coupon = (
+                                supabase.table("coupons")
+                                .select("coupon_id, coupon_type")
+                                .eq("coupon_code", coupon)
+                                .execute()
+                            )
+                            if coupon.data:
+                                coupon_type = coupon.data[0]["coupon_type"]
+                                if coupon_type == "note_taking" or coupon_type == "all":
+                                    coupon = coupon.data[0]["coupon_id"]
+                                else:
+                                    coupon = None
+                            else:
+                                coupon = None
+
                         subscription = create_subscription(
                             check_subscription.data[0]["customer_id"],
                             get_price.data[0]["price_id"],
+                            quantity=1,
+                            coupon=coupon,
                         )
                         supabase.table("businesses").update(
                             {

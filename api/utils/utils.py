@@ -29,6 +29,26 @@ INITIAL_URL = os.getenv("INITIAL_URL")
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 
 
+class BrowserContextManager:
+    """Context manager for handling browser operations with automatic cleanup"""
+
+    def __init__(self, playwright, headless=True):
+        self.playwright = playwright
+        self.headless = headless
+        self.browser = None
+
+    async def __aenter__(self):
+        self.browser = await self.playwright.chromium.launch(headless=self.headless)
+        return self.browser
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.browser:
+            try:
+                await self.browser.close()
+            except Exception as e:
+                logging.error(f"Error closing browser: {e}")
+
+
 def validate_request(data, schema):
     try:
         validate(instance=data, schema=schema)
@@ -181,10 +201,38 @@ def clubready_admin_login(data):
                 "message": "Invalid Username or Password",
             }
         if "Dashboard" in current_url:
+            hashed_password = hash_credentials(data["username"], data["password"])
+            page.goto("https://scheduling.clubready.com/day")
+            page.wait_for_selector(".spinner-background", state="hidden", timeout=40000)
+            root_div = page.query_selector("div[id='root']")
+            location_name = root_div.query_selector(
+                "#menu-location .location-name"
+            ).inner_text()
+            locations = [location_name]
             return {
-                "status": False,
-                "message": "This is not an admin account",
+                "status": True,
+                "hashed_password": hashed_password,
+                "locations": locations,
+                "message": "Clubready credentials verified successfully",
             }
+
+        if "chain" in current_url:
+            hashed_password = hash_credentials(data["username"], data["password"])
+
+            page.wait_for_selector("div[id='theclubs']")
+            select_element = page.query_selector("div[id='theclubs']")
+            option_elements = select_element.query_selector_all(".clubtext")
+            locations = [
+                option.inner_text().split(",")[0] for option in option_elements
+            ]
+
+            return {
+                "status": True,
+                "hashed_password": hashed_password,
+                "locations": locations,
+                "message": "Clubready credentials verified successfully",
+            }
+
         if "selectlogin" in current_url:
             hashed_password = hash_credentials(data["username"], data["password"])
 
@@ -266,8 +314,6 @@ async def fetch_bookings_for_location(page, base_url, location_text, semaphore):
 
             await page.click(".dropdown--item:has(input#only-me)")
             container = await page.query_selector_all(".sidebar-section-content")
-            print(container, "container")
-            print(len(container), "length of container")
 
             all_div_selectors = []
             for cont in container:
@@ -338,32 +384,60 @@ async def fetch_bookings_for_location(page, base_url, location_text, semaphore):
                                         active = "NO"
                                 except ValueError:
                                     active = "NO"
-                    client_name = await (
-                        await modal_details.query_selector("#client-name")
-                    ).inner_text()
-                    booking_number = await (
-                        await modal_details.query_selector(".details-tab .details-row")
-                    ).inner_text()
-                    booking_id = booking_number.lower().split("booking: #")[1].strip()
-                    workout_type = await (
-                        await modal_details.query_selector(".booking-title")
-                    ).inner_text()
-                    flexologist_name = await (
-                        await modal_details.query_selector(
-                            ".avatar-name-container .name-container .name"
-                        )
-                    ).inner_text()
-                    phone = await (
-                        await modal_details.query_selector(
-                            "#selected-phone-button .text"
-                        )
-                    ).inner_text()
-                    booking_time = await (
-                        await modal_details.query_selector(
-                            ".datetime-value .time-value"
-                        )
-                    ).inner_text()
+                    client_name_elem = await modal_details.query_selector(
+                        "#client-name"
+                    )
+                    client_name = (
+                        await client_name_elem.inner_text()
+                        if client_name_elem
+                        else "N/A"
+                    )
 
+                    booking_number_elem = await modal_details.query_selector(
+                        ".details-tab .details-row"
+                    )
+                    booking_number = (
+                        await booking_number_elem.inner_text()
+                        if booking_number_elem
+                        else "N/A"
+                    )
+                    booking_id = (
+                        booking_number.lower().split("booking: #")[1].strip()
+                        if "booking: #" in booking_number
+                        else "N/A"
+                    )
+
+                    workout_type_elem = await modal_details.query_selector(
+                        ".booking-title"
+                    )
+                    workout_type = (
+                        await workout_type_elem.inner_text()
+                        if workout_type_elem
+                        else "N/A"
+                    )
+
+                    flexologist_name_elem = await modal_details.query_selector(
+                        ".avatar-name-container .name-container .name"
+                    )
+                    flexologist_name = (
+                        await flexologist_name_elem.inner_text()
+                        if flexologist_name_elem
+                        else "N/A"
+                    )
+
+                    phone_elem = await modal_details.query_selector(
+                        "#selected-phone-button .text"
+                    )
+                    phone = await phone_elem.inner_text() if phone_elem else "N/A"
+
+                    booking_time_elem = await modal_details.query_selector(
+                        ".datetime-value .time-value"
+                    )
+                    booking_time = (
+                        await booking_time_elem.inner_text()
+                        if booking_time_elem
+                        else "N/A"
+                    )
                     result = {
                         "client_name": client_name,
                         "booking_id": booking_id,
@@ -377,14 +451,14 @@ async def fetch_bookings_for_location(page, base_url, location_text, semaphore):
                         "active": active,
                         "location": location_text,
                     }
-
                     all_bookings.append(result)
 
                     close_btn = await modal_details.query_selector("#header-close")
                     if close_btn:
+                        await close_btn.wait_for_element_state("visible")
+                        await close_btn.wait_for_element_state("stable")
                         await close_btn.click()
                         await page.wait_for_selector(".booking-panel", state="hidden")
-                        print("Close button clicked")
                     else:
                         print("Close button not found")
 
@@ -392,10 +466,10 @@ async def fetch_bookings_for_location(page, base_url, location_text, semaphore):
 
         except PlaywrightTimeoutError as e:
             print(f"Timeout error for location {location_text}: {e}")
-            return []
+            raise e
         except Exception as e:
             print(f"Error processing location {location_text}: {e}")
-            return []
+            raise e
 
 
 async def get_user_bookings_from_clubready(user_details, max_concurrency=3):
@@ -404,223 +478,442 @@ async def get_user_bookings_from_clubready(user_details, max_concurrency=3):
     password = reverse_hash_credentials(username, password)
     print(username, password)
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        try:
-            context = await browser.new_context()
-            page = await context.new_page()
+        # Use custom browser context manager for automatic cleanup
+        async with BrowserContextManager(p, headless=True) as browser:
+            try:
+                # Use context context manager for automatic cleanup
+                async with await browser.new_context() as context:
+                    async with await context.new_page() as page:
+                        await page.goto(INITIAL_URL)
+                        await page.fill("input[name='uid']", username)
+                        await page.fill("input[name='pw']", password)
+                        await page.click("input[type='submit']")
+                        await page.wait_for_load_state("networkidle", timeout=0)
+                        current_url = page.url
+                        if "invalidlogin" in current_url:
+                            print("Invalid Username or Password")
+                            return {
+                                "status": False,
+                                "message": "Invalid Username or Password",
+                                "bookings": [],
+                            }
 
-            await page.goto(INITIAL_URL)
-            await page.fill("input[name='uid']", username)
-            await page.fill("input[name='pw']", password)
-            await page.click("input[type='submit']")
-            await page.wait_for_load_state("networkidle", timeout=0)
-            current_url = page.url
-            if "invalidlogin" in current_url:
-                print("Invalid Username or Password")
-                return {
-                    "status": False,
-                    "message": "Invalid Username or Password",
-                    "bookings": [],
-                }
+                        all_bookings = []
+                        failed_locations = []
+                        if "Dashboard" in current_url:
+                            await page.goto("https://scheduling.clubready.com/day")
+                            await page.wait_for_load_state("networkidle", timeout=0)
 
-            all_bookings = []
-            if "Dashboard" in current_url:
-                await page.goto("https://scheduling.clubready.com/day")
-                await page.wait_for_load_state("networkidle", timeout=0)
-
-                await page.wait_for_selector(
-                    ".spinner-background", state="hidden", timeout=40000
-                )
-                location_element = await page.query_selector(
-                    "#menu-location .location-name"
-                )
-                location = await location_element.inner_text()
-
-                await page.click("#dropdown-button")
-                await page.wait_for_selector(
-                    ".sidebar-events-filter-menu", state="visible", timeout=2000
-                )
-
-                await page.click(".dropdown--item:has(input#only-me)")
-                container = await page.query_selector_all(".sidebar-section-content")
-
-                all_div_selectors = []
-                for cont in container:
-                    div_selector = await cont.query_selector_all(
-                        "div[class*='sidebar-event-card']"
-                    )
-                    all_div_selectors.extend(div_selector)
-
-                await page.click("#dropdown-button")
-                await page.wait_for_selector(
-                    ".sidebar-events-filter-menu", state="hidden", timeout=2000
-                )
-
-                if all_div_selectors:
-                    print(f"Found {len(all_div_selectors)} event cards")
-                    for div in all_div_selectors:
-                        event_date = await (
-                            await div.query_selector(".event-date")
-                        ).inner_text()
-                        past = "previous-event" in await div.get_attribute("id")
-                        await div.click()
-                        modal_details = await page.wait_for_selector(
-                            ".booking-panel", state="visible"
-                        )
-                        await page.wait_for_function(
-                            expression="""
-                        (element) => {
-                            const loaders = element.querySelectorAll('[class*="spinner"]');
-                            return element && element.offsetParent !== null && loaders.length === 0;
-                        }
-                        """,
-                            arg=modal_details,
-                            timeout=20000,
-                        )
-                        first_timer = (
-                            "YES"
-                            if await modal_details.query_selector(
-                                ".booking-header-tags .text-first-visit"
+                            await page.wait_for_selector(
+                                ".spinner-background", state="hidden", timeout=40000
                             )
-                            else "NO"
-                        )
-                        if await modal_details.query_selector(
-                            ".client-membership-tags .container-active"
-                        ):
-                            active = "YES"
-                        else:
-                            lead_type_elem = await modal_details.query_selector(
-                                ".membership-info .lead-type"
+                            location_element = await page.query_selector(
+                                "#menu-location .location-name"
                             )
-                            if (
-                                lead_type_elem
-                                and await lead_type_elem.inner_text() == "Employee"
-                            ):
-                                active = "YES"
-                            else:
-                                future_bookings_elem = (
-                                    await modal_details.query_selector(
-                                        ".future-bookings .details-info"
-                                    )
+                            location = await location_element.inner_text()
+
+                            await page.click("#dropdown-button")
+                            await page.wait_for_selector(
+                                ".sidebar-events-filter-menu",
+                                state="visible",
+                                timeout=2000,
+                            )
+
+                            await page.click(".dropdown--item:has(input#only-me)")
+                            container = await page.query_selector_all(
+                                ".sidebar-section-content"
+                            )
+
+                            all_div_selectors = []
+                            for cont in container:
+                                div_selector = await cont.query_selector_all(
+                                    "div[class*='sidebar-event-card']"
                                 )
-                                if future_bookings_elem:
-                                    try:
+                                all_div_selectors.extend(div_selector)
+
+                            await page.click("#dropdown-button")
+                            await page.wait_for_selector(
+                                ".sidebar-events-filter-menu",
+                                state="hidden",
+                                timeout=2000,
+                            )
+
+                            if all_div_selectors:
+                                print(f"Found {len(all_div_selectors)} event cards")
+                                for div in all_div_selectors:
+                                    event_date = await (
+                                        await div.query_selector(".event-date")
+                                    ).inner_text()
+                                    past = "previous-event" in await div.get_attribute(
+                                        "id"
+                                    )
+                                    await div.click()
+                                    modal_details = await page.wait_for_selector(
+                                        ".booking-panel", state="visible"
+                                    )
+                                    await page.wait_for_function(
+                                        expression="""
+                                    (element) => {
+                                        const loaders = element.querySelectorAll('[class*="spinner"]');
+                                        return element && element.offsetParent !== null && loaders.length === 0;
+                                    }
+                                    """,
+                                        arg=modal_details,
+                                        timeout=20000,
+                                    )
+                                    first_timer = (
+                                        "YES"
+                                        if await modal_details.query_selector(
+                                            ".booking-header-tags .text-first-visit"
+                                        )
+                                        else "NO"
+                                    )
+                                    if await modal_details.query_selector(
+                                        ".client-membership-tags .container-active"
+                                    ):
+                                        active = "YES"
+                                    else:
+                                        lead_type_elem = (
+                                            await modal_details.query_selector(
+                                                ".membership-info .lead-type"
+                                            )
+                                        )
                                         if (
-                                            int(await future_bookings_elem.inner_text())
-                                            > 0
+                                            lead_type_elem
+                                            and await lead_type_elem.inner_text()
+                                            == "Employee"
                                         ):
                                             active = "YES"
                                         else:
-                                            active = "NO"
-                                    except ValueError:
-                                        active = "NO"
+                                            future_bookings_elem = (
+                                                await modal_details.query_selector(
+                                                    ".future-bookings .details-info"
+                                                )
+                                            )
+                                            if future_bookings_elem:
+                                                try:
+                                                    if (
+                                                        int(
+                                                            await future_bookings_elem.inner_text()
+                                                        )
+                                                        > 0
+                                                    ):
+                                                        active = "YES"
+                                                    else:
+                                                        active = "NO"
+                                                except ValueError:
+                                                    active = "NO"
 
-                        client_name = await (
-                            await modal_details.query_selector("#client-name")
-                        ).inner_text()
-                        booking_number = await (
-                            await modal_details.query_selector(
-                                ".details-tab .details-row"
-                            )
-                        ).inner_text()
-                        booking_id = (
-                            booking_number.lower().split("booking: #")[1].strip()
-                        )
-                        workout_type = await (
-                            await modal_details.query_selector(".booking-title")
-                        ).inner_text()
-                        flexologist_name = await (
-                            await modal_details.query_selector(
-                                ".avatar-name-container .name-container .name"
-                            )
-                        ).inner_text()
-                        phone = await (
-                            await modal_details.query_selector(
-                                "#selected-phone-button .text"
-                            )
-                        ).inner_text()
-                        booking_time = await (
-                            await modal_details.query_selector(
-                                ".datetime-value .time-value"
-                            )
-                        ).inner_text()
-                        result = {
-                            "client_name": client_name,
-                            "booking_id": booking_id,
-                            "workout_type": workout_type,
-                            "flexologist_name": flexologist_name,
-                            "phone": phone,
-                            "booking_time": booking_time,
-                            "event_date": event_date,
-                            "past": past,
-                            "first_timer": first_timer,
-                            "active": active,
-                            "location": location.lower(),
-                        }
-                        all_bookings.append(result)
+                                    client_name_elem = (
+                                        await modal_details.query_selector(
+                                            "#client-name"
+                                        )
+                                    )
+                                    client_name = (
+                                        await client_name_elem.inner_text()
+                                        if client_name_elem
+                                        else "N/A"
+                                    )
 
-                        close_btn = await modal_details.query_selector("#header-close")
-                        if close_btn:
-                            await close_btn.click()
-                            await page.wait_for_selector(
-                                ".booking-panel", state="hidden"
-                            )
-                            print("Close button clicked")
+                                    booking_number_elem = (
+                                        await modal_details.query_selector(
+                                            ".details-tab .details-row"
+                                        )
+                                    )
+                                    booking_number = (
+                                        await booking_number_elem.inner_text()
+                                        if booking_number_elem
+                                        else "N/A"
+                                    )
+                                    booking_id = (
+                                        booking_number.lower()
+                                        .split("booking: #")[1]
+                                        .strip()
+                                        if "booking: #" in booking_number
+                                        else "N/A"
+                                    )
+
+                                    workout_type_elem = (
+                                        await modal_details.query_selector(
+                                            ".booking-title"
+                                        )
+                                    )
+                                    workout_type = (
+                                        await workout_type_elem.inner_text()
+                                        if workout_type_elem
+                                        else "N/A"
+                                    )
+
+                                    flexologist_name_elem = await modal_details.query_selector(
+                                        ".avatar-name-container .name-container .name"
+                                    )
+                                    flexologist_name = (
+                                        await flexologist_name_elem.inner_text()
+                                        if flexologist_name_elem
+                                        else "N/A"
+                                    )
+
+                                    phone_elem = await modal_details.query_selector(
+                                        "#selected-phone-button .text"
+                                    )
+                                    phone = (
+                                        await phone_elem.inner_text()
+                                        if phone_elem
+                                        else "N/A"
+                                    )
+
+                                    booking_time_elem = (
+                                        await modal_details.query_selector(
+                                            ".datetime-value .time-value"
+                                        )
+                                    )
+                                    booking_time = (
+                                        await booking_time_elem.inner_text()
+                                        if booking_time_elem
+                                        else "N/A"
+                                    )
+                                    result = {
+                                        "client_name": client_name,
+                                        "booking_id": booking_id,
+                                        "workout_type": workout_type,
+                                        "flexologist_name": flexologist_name,
+                                        "phone": phone,
+                                        "booking_time": booking_time,
+                                        "event_date": event_date,
+                                        "past": past,
+                                        "first_timer": first_timer,
+                                        "active": active,
+                                        "location": location,
+                                    }
+                                    all_bookings.append(result)
+
+                                    close_btn = await modal_details.query_selector(
+                                        "#header-close"
+                                    )
+                                    if close_btn:
+                                        await close_btn.click()
+                                        await page.wait_for_selector(
+                                            ".booking-panel", state="hidden"
+                                        )
+                                        print("Close button clicked")
+                                    else:
+                                        print("Close button not found")
                         else:
-                            print("Close button not found")
-            else:
-                await page.wait_for_selector("select[name='stores']")
-                select_element = await page.query_selector("select[name='stores']")
-                option_elements = await select_element.query_selector_all("option")
-                location_texts = [await opt.inner_text() for opt in option_elements]
-                await context.close()
+                            await page.wait_for_selector("select[name='stores']")
+                            select_element = await page.query_selector(
+                                "select[name='stores']"
+                            )
+                            option_elements = await select_element.query_selector_all(
+                                "option"
+                            )
+                            location_texts = [
+                                await opt.inner_text() for opt in option_elements
+                            ]
 
-                if not location_texts:
-                    print("No locations found in dropdown")
-                    return {
-                        "status": False,
-                        "message": "No locations found",
-                        "bookings": [],
-                    }
+                            if not location_texts:
+                                print("No locations found in dropdown")
+                                return {
+                                    "status": False,
+                                    "message": "No locations found",
+                                    "bookings": [],
+                                }
 
-                print(f"Found {len(location_texts)} locations: {location_texts}")
+                            print(
+                                f"Found {len(location_texts)} locations: {location_texts}"
+                            )
 
-                semaphore = asyncio.Semaphore(max_concurrency)
-                tasks = []
-                for location_text in location_texts:
-                    new_context = await browser.new_context()
-                    new_page = await new_context.new_page()
-                    await new_page.goto(INITIAL_URL)
-                    await new_page.fill("input[name='uid']", username)
-                    await new_page.fill("input[name='pw']", password)
-                    await new_page.click("input[type='submit']")
-                    await new_page.wait_for_load_state("networkidle", timeout=0)
-                    task = asyncio.create_task(
-                        fetch_bookings_for_location(
-                            new_page, current_url, location_text, semaphore
-                        )
-                    )
-                    tasks.append((task, new_context))
+                            semaphore = asyncio.Semaphore(max_concurrency)
+                            tasks = []
 
-                for task, context in tasks:
-                    bookings = await task
-                    all_bookings.extend(bookings)
-                    await context.close()
+                            # Create a list to track contexts for cleanup
+                            contexts_to_cleanup = []
 
-            return {
-                "status": True,
-                "message": "Bookings fetched successfully",
-                "bookings": all_bookings,
-            }
+                            try:
+                                # Create tasks with location tracking
+                                location_tasks = []
+                                for location_text in location_texts:
+                                    # Use context managers for each location's browser context
+                                    new_context = await browser.new_context()
+                                    contexts_to_cleanup.append(new_context)
 
-        except PlaywrightTimeoutError as e:
-            print(f"Timeout error: {e}")
-            raise e
-        except Exception as e:
-            print(f"Error fetching bookings: {e}")
-            raise e
-        finally:
-            await browser.close()
+                                    new_page = await new_context.new_page()
+                                    await new_page.goto(INITIAL_URL)
+                                    await new_page.fill("input[name='uid']", username)
+                                    await new_page.fill("input[name='pw']", password)
+                                    await new_page.click("input[type='submit']")
+                                    await new_page.wait_for_load_state(
+                                        "networkidle", timeout=0
+                                    )
+
+                                    task = asyncio.create_task(
+                                        fetch_bookings_for_location(
+                                            new_page,
+                                            current_url,
+                                            location_text,
+                                            semaphore,
+                                        )
+                                    )
+                                    # Store task with its location for tracking
+                                    location_tasks.append((location_text, task))
+
+                                # Wait for all tasks to complete and handle failures
+                                results = await asyncio.gather(
+                                    *[task for _, task in location_tasks],
+                                    return_exceptions=True,
+                                )
+
+                                # Process results and track failures
+                                successful_bookings = []
+
+                                for (location_text, _), result in zip(
+                                    location_tasks, results
+                                ):
+                                    if isinstance(result, Exception):
+                                        print(
+                                            f"Task failed for location {location_text}: {result}"
+                                        )
+                                        failed_locations.append(location_text)
+                                    else:
+                                        # Check if result is a genuine empty array or actual bookings
+                                        if result is not None and isinstance(
+                                            result, list
+                                        ):
+                                            successful_bookings.extend(result)
+                                        else:
+                                            print(
+                                                f"Unexpected result for location {location_text}: {result}"
+                                            )
+                                            failed_locations.append(location_text)
+
+                                all_bookings.extend(successful_bookings)
+
+                                # Retry failed locations up to 2 times
+                                if failed_locations:
+                                    print(
+                                        f"Retrying {len(failed_locations)} failed locations..."
+                                    )
+                                    retry_successful = []
+                                    still_failed = []
+
+                                    for location_text in failed_locations:
+                                        success = False
+                                        for retry_attempt in range(
+                                            2
+                                        ):  # Try up to 2 times
+                                            try:
+                                                print(
+                                                    f"Retry attempt {retry_attempt + 1} for location: {location_text}"
+                                                )
+
+                                                # Create new context and page for retry
+                                                retry_context = (
+                                                    await browser.new_context()
+                                                )
+                                                retry_page = (
+                                                    await retry_context.new_page()
+                                                )
+                                                await retry_page.goto(INITIAL_URL)
+                                                await retry_page.fill(
+                                                    "input[name='uid']", username
+                                                )
+                                                await retry_page.fill(
+                                                    "input[name='pw']", password
+                                                )
+                                                await retry_page.click(
+                                                    "input[type='submit']"
+                                                )
+                                                await retry_page.wait_for_load_state(
+                                                    "networkidle", timeout=0
+                                                )
+
+                                                # Fetch bookings for this location
+                                                retry_bookings = (
+                                                    await fetch_bookings_for_location(
+                                                        retry_page,
+                                                        current_url,
+                                                        location_text,
+                                                        semaphore,
+                                                    )
+                                                )
+
+                                                # Clean up retry context
+                                                await retry_context.close()
+
+                                                # Check if retry was successful
+                                                if (
+                                                    retry_bookings is not None
+                                                    and isinstance(retry_bookings, list)
+                                                ):
+                                                    all_bookings.extend(retry_bookings)
+                                                    retry_successful.append(
+                                                        location_text
+                                                    )
+                                                    success = True
+                                                    print(
+                                                        f"Retry successful for location: {location_text}"
+                                                    )
+                                                    break
+                                                else:
+                                                    print(
+                                                        f"Retry returned empty result for location: {location_text}"
+                                                    )
+
+                                            except Exception as e:
+                                                print(
+                                                    f"Retry attempt {retry_attempt + 1} failed for {location_text}: {e}"
+                                                )
+                                                # Clean up on exception
+                                                try:
+                                                    await retry_context.close()
+                                                except:
+                                                    pass
+
+                                        if not success:
+                                            still_failed.append(location_text)
+                                            print(
+                                                f"Location {location_text} failed after all retry attempts"
+                                            )
+
+                                    failed_locations = (
+                                        still_failed  # Update failed locations list
+                                    )
+
+                            finally:
+                                # Ensure all contexts are cleaned up
+                                for ctx in contexts_to_cleanup:
+                                    try:
+                                        await ctx.close()
+                                    except Exception as e:
+                                        print(f"Error closing context: {e}")
+
+                        # Return results with failed locations for retry
+                        if failed_locations:
+                            message = (
+                                f"Bookings fetched successfully. {len(failed_locations)} locations failed "
+                                f"after retry attempts (2 retries each)."
+                            )
+                        else:
+                            message = "Bookings fetched successfully (including retries for failed locations)."
+
+                        response = {
+                            "status": len(failed_locations) == 0,  # True if no failures
+                            "message": message,
+                            "bookings": all_bookings,
+                            "failed_locations": failed_locations,
+                            "successful_locations": [
+                                loc
+                                for loc in location_texts
+                                if loc not in failed_locations
+                            ],
+                        }
+                        return response
+
+            except PlaywrightTimeoutError as e:
+                print(f"Timeout error: {e}")
+                raise e
+            except Exception as e:
+                print(f"Error fetching bookings: {e}")
+                raise e
 
 
 def submit_notes(username, password, period, notes, location=None, client_name=None):

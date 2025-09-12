@@ -62,33 +62,26 @@ def create_setup_intent_route(token):
 def update_payment_id(token):
     try:
         user_data = decode_jwt_token(token)
-        if user_data["role_id"] == 3:
-            return (
-                jsonify(
-                    {
-                        "error": "You are not authorized to see this page",
-                        "status": "error",
-                    }
-                ),
-                401,
-            )
         data = request.get_json()
 
         payment_id = data.get("payment_id")
 
         get_customer = (
             supabase.table("businesses")
-            .select("customer_id")
+            .select("customer_id, coupon")
             .eq("admin_id", user_data["user_id"])
             .execute()
         )
         customer_id = get_customer.data[0]["customer_id"]
+        coupon = get_customer.data[0]["coupon"]
+        if not coupon:
+            coupon = data.get("coupon", None)
 
         result = create_payment_method(customer_id, payment_id)
         if result["status"]:
-            supabase.table("businesses").update({"payment_id": payment_id}).eq(
-                "admin_id", user_data["user_id"]
-            ).execute()
+            supabase.table("businesses").update(
+                {"payment_id": payment_id, "coupon": coupon}
+            ).eq("admin_id", user_data["user_id"]).execute()
             insert_notification(
                 user_data["user_id"],
                 f"Payment method was updated",

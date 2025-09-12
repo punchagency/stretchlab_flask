@@ -9,6 +9,7 @@ import json
 import uuid
 from werkzeug.utils import secure_filename
 from ..utils.settings import save_image_to_s3, delete_image_from_s3
+from ..payment.stripe_utils import check_coupon, retrieve_coupons
 import io
 from ..utils.utils import (
     verify_password,
@@ -918,6 +919,137 @@ def update_permissions(token):
         )
     except Exception as e:
         logging.error(f"Error in POST api/admin/settings/update-permissions: {str(e)}")
+        return jsonify({"error": str(e), "status": "error"}), 500
+
+
+@routes.route("/add-coupon", methods=["POST"])
+@require_bearer_token
+def add_coupon(token):
+    try:
+        user_data = decode_jwt_token(token)
+        data = request.get_json()
+        coupon_code = data.get("coupon_code")
+        coupon_type = data.get("coupon_type")
+        coupon_name = data.get("coupon_name")
+        coupon_id = data.get("coupon_id")
+
+        checking_if_user_exists = (
+            supabase.table("users")
+            .select("*")
+            .eq("id", user_data["user_id"])
+            .in_("role_id", [1])
+            .execute()
+        )
+
+        if not checking_if_user_exists.data:
+            return (
+                jsonify({"message": "Unauthorized access", "status": "error"}),
+                400,
+            )
+
+        check_if_coupon_exists = (
+            supabase.table("coupons").select("*").eq("coupon_id", coupon_id).execute()
+        )
+        if check_if_coupon_exists.data:
+            return (
+                jsonify({"message": "Coupon already exists", "status": "error"}),
+                400,
+            )
+
+        if not coupon_code:
+            return (
+                jsonify({"message": "Coupon code is required", "status": "error"}),
+                400,
+            )
+        if not coupon_type:
+            return (
+                jsonify({"message": "Coupon type is required", "status": "error"}),
+                400,
+            )
+        if not coupon_name:
+            return (
+                jsonify({"message": "Coupon name is required", "status": "error"}),
+                400,
+            )
+        if not coupon_id:
+            return (
+                jsonify({"message": "Coupon id is required", "status": "error"}),
+                400,
+            )
+
+        check_if_coupon_is_active = check_coupon(coupon_id)
+        if check_if_coupon_is_active["exists"] == False:
+            return (
+                jsonify({"message": "Coupon does not exist", "status": "error"}),
+                400,
+            )
+        if check_if_coupon_is_active["active"] == False:
+            return (
+                jsonify({"message": "Coupon is not active", "status": "error"}),
+                400,
+            )
+
+        supabase.table("coupons").insert(
+            {
+                "coupon_code": coupon_code,
+                "coupon_type": coupon_type,
+                "coupon_name": coupon_name,
+                "coupon_id": coupon_id,
+            }
+        ).execute()
+
+        return (
+            jsonify({"message": "Coupon added successfully", "status": "success"}),
+            200,
+        )
+    except Exception as e:
+        logging.error(f"Error in POST api/admin/settings/add-coupon: {str(e)}")
+        return jsonify({"error": str(e), "status": "error"}), 500
+
+
+@routes.route("/get-coupon", methods=["GET"])
+@require_bearer_token
+def get_coupons(token):
+    try:
+        user_data = decode_jwt_token(token)
+        check_user_exists = (
+            supabase.table("users")
+            .select("*")
+            .eq("id", user_data["user_id"])
+            .in_("role_id", [1])
+            .execute()
+        )
+        if not check_user_exists.data:
+            return (
+                jsonify({"message": "Unauthorized access", "status": "error"}),
+                400,
+            )
+        coupons = retrieve_coupons()
+        check_if_coupon_exists = supabase.table("coupons").select("*").execute()
+        returned_data = [
+            {
+                "active": coupon["active"],
+                "code": coupon["code"],
+                "name": coupon["coupon"]["name"],
+                "max_redemptions": coupon["coupon"]["max_redemptions"],
+                "percent_off": coupon["coupon"]["percent_off"],
+                "duration": coupon["coupon"]["duration"],
+                "duration_in_months": coupon["coupon"]["duration_in_months"],
+                "expires_at": coupon["expires_at"],
+                "available": any(
+                    existing_coupon["coupon_id"] == coupon["id"]
+                    for existing_coupon in check_if_coupon_exists.data
+                ),
+            }
+            for coupon in coupons.data
+            if coupon
+        ]
+        return (
+            jsonify({"coupons": returned_data, "status": "success"}),
+            200,
+        )
+    except Exception as e:
+        logging.error(f"Error in POST api/admin/settings/get-coupons: {str(e)}")
         return jsonify({"error": str(e), "status": "error"}), 500
 
 

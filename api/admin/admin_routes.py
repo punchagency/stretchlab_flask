@@ -25,6 +25,8 @@ import os
 
 routes = Blueprint("admin", __name__)
 
+SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
+
 
 def process_single_email(app, email, username, admin_id, resend):
     """Process a single email invitation"""
@@ -603,7 +605,9 @@ def save_robot_config(token):
 
         check_subscription = (
             supabase.table("businesses")
-            .select("payment_id,robot_process_automation_subscription_id, customer_id")
+            .select(
+                "payment_id,robot_process_automation_subscription_id, customer_id, coupon, username"
+            )
             .eq("admin_id", user_data["user_id"])
             .execute()
         )
@@ -665,11 +669,29 @@ def save_robot_config(token):
                 jsonify({"message": "Robot already exists", "status": "error"}),
                 400,
             )
+        if_coupon = check_subscription.data[0].get("coupon", None)
+
+        if if_coupon:
+            coupon = (
+                supabase.table("coupons")
+                .select("coupon_id, coupon_type")
+                .eq("coupon_code", if_coupon)
+                .execute()
+            )
+            if coupon.data:
+                coupon_type = coupon.data[0]["coupon_type"]
+                if coupon_type == "robot" or coupon_type == "all":
+                    if_coupon = coupon.data[0]["coupon_id"]
+                else:
+                    if_coupon = None
+            else:
+                if_coupon = None
 
         subscription = create_subscription(
             check_subscription.data[0]["customer_id"],
             get_price.data[0]["price_id"],
             quantity=data["numberOfStudioLocations"],
+            coupon=if_coupon,
         )
         if subscription["success"] == False:
             return (
@@ -691,7 +713,7 @@ def save_robot_config(token):
                     "number_of_locations": data["numberOfStudioLocations"],
                     "selected_locations": json.dumps(data["selectedStudioLocations"]),
                     "locations": json.dumps(data["studioLocations"]),
-                    # "excluded_names": json.dumps(data["excludedNames"]),
+                    "excluded_names": json.dumps(data["excludedNames"]),
                     "unlogged_booking": True,
                     "run_time": "07:30",
                     "rule_arn": rule_arn,
@@ -754,11 +776,29 @@ def save_robot_config(token):
                 "robot automation",
             )
 
+            token = jwt.encode(
+                {
+                    "user_id": check_user_exists_and_is_admin.data[0].get("id"),
+                    "email": check_user_exists_and_is_admin.data[0]["email"],
+                    "role_id": check_user_exists_and_is_admin.data[0]["role_id"],
+                    "role_name": check_user_exists_and_is_admin.data[0]["roles"][
+                        "name"
+                    ],
+                    "rpa_verified": True,
+                    "note_verified": False,
+                    "username": check_user_exists_and_is_admin.data[0]["username"],
+                    "status": check_user_exists_and_is_admin.data[0]["status"],
+                },
+                SECRET_KEY,
+                algorithm="HS256",
+            )
+
             return (
                 jsonify(
                     {
                         "message": "Robot config saved successfully",
                         "status": "success",
+                        "token": token,
                     }
                 ),
                 200,
@@ -940,7 +980,7 @@ def update_robot_config(token):
                 "selected_locations": json.dumps(data["selectedStudioLocations"]),
                 "number_of_locations": data["numberOfStudioLocations"],
                 "unlogged_booking": True,
-                # "excluded_names": json.dumps(data["excludedNames"]),
+                "excluded_names": json.dumps(data["excludedNames"]),
                 "updated_at": datetime.now().isoformat(),
             }
         ).eq("id", data["id"]).execute()

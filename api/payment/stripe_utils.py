@@ -57,7 +57,7 @@ def modify_customer_email(customer_id, email):
         return e
 
 
-def create_subscription(customer_id, price_id, quantity=1):
+def create_subscription(customer_id, price_id, quantity=1, coupon=None):
     try:
         trial_end_dt = datetime.now() + relativedelta(days=3)
         trial_end = int(trial_end_dt.timestamp())
@@ -65,15 +65,20 @@ def create_subscription(customer_id, price_id, quantity=1):
             trial_end_dt.replace(day=1) + relativedelta(months=1, days=-1)
         ).replace(hour=23, minute=59, second=59)
         billing_cycle_anchor = int(end_of_month.timestamp())
-        subscription = stripe.Subscription.create(
-            customer=customer_id,
-            items=[{"price": price_id, "quantity": quantity}],
-            payment_behavior="allow_incomplete",
-            trial_end=trial_end,
-            billing_cycle_anchor=billing_cycle_anchor,
-            proration_behavior="create_prorations",
-            expand=["latest_invoice.payment_intent"],
-        )
+
+        params = {
+            "customer": customer_id,
+            "items": [{"price": price_id, "quantity": quantity}],
+            "payment_behavior": "allow_incomplete",
+            "trial_end": trial_end,
+            "billing_cycle_anchor": billing_cycle_anchor,
+            "proration_behavior": "create_prorations",
+            "expand": ["latest_invoice.payment_intent"],
+        }
+        if coupon:
+            coupons = stripe.PromotionCode.retrieve(coupon)
+            params["discounts"] = [{"coupon": coupons["coupon"]["id"]}]
+        subscription = stripe.Subscription.create(**params)
         logging.info(subscription, "subscription")
         return {
             "subscription_id": subscription.id,
@@ -82,6 +87,28 @@ def create_subscription(customer_id, price_id, quantity=1):
         }
     except Exception as e:
         print(e, "error in create_subscription")
+        return e
+
+
+def check_coupon(coupon_id):
+    try:
+        coupons = stripe.PromotionCode.retrieve(coupon_id)
+        if coupons["coupon"]["id"]:
+            return {"active": coupons["active"], "exists": True}
+        else:
+            return {"active": False, "exists": False}
+
+    except Exception as e:
+        print(e)
+        return e
+
+
+def retrieve_coupons():
+    try:
+        coupons = stripe.PromotionCode.list()
+        return coupons
+    except Exception as e:
+        print(e)
         return e
 
 
