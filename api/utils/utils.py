@@ -403,7 +403,7 @@ async def fetch_bookings_for_location(page, base_url, location_text, semaphore):
                     )
                     booking_id = (
                         booking_number.lower().split("booking: #")[1].strip()
-                        if "booking: #" in booking_number
+                        if "booking: #" in booking_number.lower()
                         else "N/A"
                     )
 
@@ -629,7 +629,7 @@ async def get_user_bookings_from_clubready(user_details, max_concurrency=3):
                                         booking_number.lower()
                                         .split("booking: #")[1]
                                         .strip()
-                                        if "booking: #" in booking_number
+                                        if "booking: #" in booking_number.lower()
                                         else "N/A"
                                     )
 
@@ -1072,13 +1072,33 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
                                         timeout=10000,
                                     )
                                     if unpaid_modal:
-                                        unpaid_modal.query_selector(
-                                            "button[id='log-and-go-to-pos-button']"
-                                        ).click()
-                                        page.wait_for_timeout(500)
-                                        unpaid_modal.query_selector(
-                                            ".desktop-modal-header-close"
-                                        ).click()
+                                        unpaid_text_area = unpaid_modal.query_selector(
+                                            "textarea[id='optional-internal-note-mobile']"
+                                        )
+                                        if unpaid_text_area:
+                                            unpaid_text_area.fill(
+                                                "Unpaid session logged off"
+                                            )
+                                            unpaid_modal.query_selector(
+                                                "button[id='log-and-go-to-pos-button']"
+                                            ).click()
+                                            page.wait_for_timeout(500)
+                                            spinner = page.query_selector(
+                                                ".spinner-background"
+                                            )
+                                            if spinner:
+                                                page.wait_for_selector(
+                                                    ".spinner-background",
+                                                    state="hidden",
+                                                    timeout=40000,
+                                                )
+                                        # unpaid_modal.query_selector(
+                                        #     "button[id='log-and-go-to-pos-button']"
+                                        # ).click()
+                                        # page.wait_for_timeout(500)
+                                        # unpaid_modal.query_selector(
+                                        #     ".desktop-modal-header-close"
+                                        # ).click()
                                 except:
                                     page.wait_for_selector(
                                         ".spinner-background",
@@ -1126,13 +1146,25 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
                                 timeout=10000,
                             )
                             if unpaid_modal:
-                                unpaid_modal.query_selector(
-                                    "button[id='log-and-go-to-pos-button']"
-                                ).click()
-                                page.wait_for_timeout(500)
-                                unpaid_modal.query_selector(
-                                    ".desktop-modal-header-close"
-                                ).click()
+                                unpaid_text_area = unpaid_modal.query_selector(
+                                    "textarea[id='optional-internal-note-mobile']"
+                                )
+                                if unpaid_text_area:
+                                    unpaid_text_area.fill("Unpaid session logged off")
+                                    unpaid_modal.query_selector(
+                                        "button[id='log-and-go-to-pos-button']"
+                                    ).click()
+                                    page.wait_for_timeout(500)
+                                    spinner = page.query_selector(".spinner-background")
+                                    if spinner:
+                                        page.wait_for_selector(
+                                            ".spinner-background",
+                                            state="hidden",
+                                            timeout=40000,
+                                        )
+                                # unpaid_modal.query_selector(
+                                #     ".desktop-modal-header-close"
+                                # ).click()
                         except:
                             page.wait_for_selector(
                                 ".spinner-background",
@@ -1321,14 +1353,30 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
                                             timeout=10000,
                                         )
                                         if unpaid_modal:
-                                            print("Unpaid modal found")
-                                            unpaid_modal.query_selector(
-                                                "button[id='log-and-go-to-pos-button']"
-                                            ).click()
-                                            page.wait_for_timeout(500)
-                                            unpaid_modal.query_selector(
-                                                ".desktop-modal-header-close"
-                                            ).click()
+                                            unpaid_text_area = unpaid_modal.query_selector(
+                                                "textarea[id='optional-internal-note-mobile']"
+                                            )
+                                            if unpaid_text_area:
+                                                unpaid_text_area.fill(
+                                                    "Unpaid session logged off"
+                                                )
+                                                unpaid_modal.query_selector(
+                                                    "button[id='log-and-go-to-pos-button']"
+                                                ).click()
+                                                page.wait_for_timeout(500)
+                                                spinner = page.query_selector(
+                                                    ".spinner-background"
+                                                )
+                                                if spinner:
+                                                    page.wait_for_selector(
+                                                        ".spinner-background",
+                                                        state="hidden",
+                                                        timeout=40000,
+                                                    )
+                                            # page.wait_for_timeout(500)
+                                            # unpaid_modal.query_selector(
+                                            #     ".desktop-modal-header-close"
+                                            # ).click()
                                     except:
                                         page.wait_for_selector(
                                             ".spinner-background",
@@ -1378,13 +1426,33 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
                                     timeout=10000,
                                 )
                                 if unpaid_modal:
-                                    unpaid_modal.query_selector(
-                                        "button[id='log-and-go-to-pos-button']"
-                                    ).click()
-                                    page.wait_for_timeout(500)
-                                    unpaid_modal.query_selector(
-                                        ".desktop-modal-header-close"
-                                    ).click()
+                                    unpaid_text_area = unpaid_modal.query_selector(
+                                        "textarea[id='optional-internal-note-mobile']"
+                                    )
+                                    if unpaid_text_area:
+                                        unpaid_text_area.fill(
+                                            "Unpaid session logged off"
+                                        )
+                                        unpaid_modal.query_selector(
+                                            "button[id='log-and-go-to-pos-button']"
+                                        ).click()
+                                        page.wait_for_timeout(500)
+                                        spinner = page.query_selector(
+                                            ".spinner-background"
+                                        )
+                                        if spinner:
+                                            page.wait_for_selector(
+                                                ".spinner-background",
+                                                state="hidden",
+                                                timeout=40000,
+                                            )
+                                    # unpaid_modal.query_selector(
+                                    #     "button[id='log-and-go-to-pos-button']"
+                                    # ).click()
+                                    # page.wait_for_timeout(500)
+                                    # unpaid_modal.query_selector(
+                                    #     ".desktop-modal-header-close"
+                                    # ).click()
                             except:
                                 page.wait_for_selector(
                                     ".spinner-background",
