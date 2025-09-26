@@ -149,6 +149,134 @@ def background_submit_notes(
         ).eq("client_name", client_name).eq("created_at", client_date).execute()
 
 
+# @routes.route("/get_bookings", methods=["GET"])
+# @require_bearer_token
+# def get_bookings(token):
+#     try:
+#         reset = request.args.get("reset")
+#         user_data = decode_jwt_token(token)
+#         if user_data["role_id"] not in [3, 8]:
+#             return (
+#                 jsonify({"message": "Unauthorized", "status": "error"}),
+#                 401,
+#             )
+
+#         client_datetime = get_client_datetime()
+#         client_date = client_datetime.strftime("%Y-%m-%d")
+
+#         check_today_booking = (
+#             supabase.table("clubready_bookings")
+#             .select("*")
+#             .eq("user_id", user_data["user_id"])
+#             .eq("created_at", client_date)
+#             .execute()
+#         )
+#         if len(check_today_booking.data) > 0 and reset != "true":
+#             bookings = check_today_booking.data
+#         else:
+#             user = (
+#                 supabase.table("users")
+#                 .select("*")
+#                 .eq("id", user_data["user_id"])
+#                 .execute()
+#             )
+#             if (
+#                 user.data[0]["clubready_username"] is None
+#                 or user.data[0]["clubready_password"] is None
+#             ):
+#                 return (
+#                     jsonify(
+#                         {
+#                             "message": "Please update your clubready credentials",
+#                             "status": "warning",
+#                         }
+#                     ),
+#                     400,
+#                 )
+#             user_details = {
+#                 "Username": user.data[0]["clubready_username"],
+#                 "Password": user.data[0]["clubready_password"],
+#             }
+#             bookings = asyncio.run(get_user_bookings_from_clubready(user_details))
+#             if bookings["status"]:
+#                 check_today_booking = (
+#                     supabase.table("clubready_bookings")
+#                     .select("*")
+#                     .eq("user_id", user_data["user_id"])
+#                     .eq("created_at", client_date)
+#                     .execute()
+#                 )
+#                 if len(check_today_booking.data) > 0:
+#                     for booking in check_today_booking.data:
+#                         if booking["submitted_notes"] is None:
+#                             supabase.table("clubready_bookings").delete().eq(
+#                                 "id", booking["id"]
+#                             ).execute()
+
+#                 existing_submitted_bookings = set()
+#                 for today_booking in check_today_booking.data:
+#                     if today_booking["submitted_notes"] is not None:
+#                         existing_submitted_bookings.add(today_booking["booking_id"])
+
+#                 def parse_time(t):
+#                     return datetime.strptime(t, "%I:%M %p").time()
+
+#                 bookings["bookings"].sort(key=lambda b: parse_time(b["booking_time"]))
+
+#                 for booking in bookings["bookings"]:
+#                     if booking["booking_id"] not in existing_submitted_bookings:
+#                         supabase.table("clubready_bookings").insert(
+#                             {
+#                                 "user_id": user_data["user_id"],
+#                                 "client_name": booking["client_name"].lower(),
+#                                 "booking_id": booking["booking_id"],
+#                                 "workout_type": booking["workout_type"],
+#                                 "first_timer": booking["first_timer"],
+#                                 "active_member": booking["active"],
+#                                 "location": booking["location"].lower(),
+#                                 "phone_number": booking["phone"],
+#                                 "booking_time": booking["booking_time"],
+#                                 "period": booking["event_date"],
+#                                 "past_booking": booking["past"],
+#                                 "flexologist_name": booking["flexologist_name"].lower(),
+#                                 "submitted": False,
+#                                 "submitted_notes": None,
+#                                 "created_at": client_date,
+#                             }
+#                         ).execute()
+
+#                 check_bookings = (
+#                     supabase.table("clubready_bookings")
+#                     .select("*")
+#                     .eq("user_id", user_data["user_id"])
+#                     .eq("created_at", client_date)
+#                     .order("id")
+#                     .execute()
+#                 )
+#                 bookings = check_bookings.data
+#             else:
+#                 return (
+#                     jsonify(
+#                         {
+#                             "message": "incorrect username or password",
+#                             "status": "warning",
+#                         }
+#                     ),
+#                     400,
+#                 )
+
+#         response = {
+#             "message": f"Bookings fetched successfully",
+#             "status": "success",
+#             "bookings": bookings,
+#         }
+#         return jsonify(response), 200
+
+#     except Exception as e:
+#         logging.error(f"Error in GET /api/resource: {str(e)}")
+#         return jsonify({"error": "Internal server error", "status": "error"}), 500
+
+
 @routes.route("/get_bookings", methods=["GET"])
 @require_bearer_token
 def get_bookings(token):
@@ -163,40 +291,70 @@ def get_bookings(token):
 
         client_datetime = get_client_datetime()
         client_date = client_datetime.strftime("%Y-%m-%d")
+        user = (
+            supabase.table("users").select("*").eq("id", user_data["user_id"]).execute()
+        )
+        if not user.data:
+            return jsonify({"message": "User not found", "status": "error"}), 404
+        if (
+            user.data[0]["clubready_username"] is None
+            or user.data[0]["clubready_password"] is None
+        ):
+            return (
+                jsonify(
+                    {
+                        "message": "Please update your clubready credentials",
+                        "status": "warning",
+                    }
+                ),
+                400,
+            )
+        account_id = user.data[0]["clubready_user_id"]
+        other_accounts = (
+            json.loads(user.data[0]["other_clubready_accounts"])
+            if user.data[0]["other_clubready_accounts"]
+            else None
+        )
+        if other_accounts:
+            for account in other_accounts:
+                if account["active"] == True:
+                    account_id = account["id"]
+                    break
 
         check_today_booking = (
             supabase.table("clubready_bookings")
             .select("*")
             .eq("user_id", user_data["user_id"])
             .eq("created_at", client_date)
+            .eq("account_id", account_id)
             .execute()
         )
         if len(check_today_booking.data) > 0 and reset != "true":
             bookings = check_today_booking.data
         else:
-            user = (
-                supabase.table("users")
-                .select("*")
-                .eq("id", user_data["user_id"])
-                .execute()
-            )
-            if (
-                user.data[0]["clubready_username"] is None
-                or user.data[0]["clubready_password"] is None
-            ):
-                return (
-                    jsonify(
-                        {
-                            "message": "Please update your clubready credentials",
-                            "status": "warning",
+            user_details = None
+            if other_accounts:
+                for account in other_accounts:
+                    if account["active"] == True:
+                        user_details = {
+                            "Username": account["username"],
+                            "Password": account["password"],
                         }
-                    ),
-                    400,
-                )
-            user_details = {
-                "Username": user.data[0]["clubready_username"],
-                "Password": user.data[0]["clubready_password"],
-            }
+                        break
+
+                if not user_details:
+                    user_details = {
+                        "Username": user.data[0]["clubready_username"],
+                        "Password": user.data[0]["clubready_password"],
+                    }
+            else:
+                user_details = {
+                    "Username": user.data[0]["clubready_username"],
+                    "Password": user.data[0]["clubready_password"],
+                }
+
+            print(user_details, "user_details")
+
             bookings = asyncio.run(get_user_bookings_from_clubready(user_details))
             if bookings["status"]:
                 check_today_booking = (
@@ -204,6 +362,7 @@ def get_bookings(token):
                     .select("*")
                     .eq("user_id", user_data["user_id"])
                     .eq("created_at", client_date)
+                    .eq("account_id", account_id)
                     .execute()
                 )
                 if len(check_today_booking.data) > 0:
@@ -242,6 +401,7 @@ def get_bookings(token):
                                 "submitted": False,
                                 "submitted_notes": None,
                                 "created_at": client_date,
+                                "account_id": account_id,
                             }
                         ).execute()
 
@@ -250,6 +410,7 @@ def get_bookings(token):
                     .select("*")
                     .eq("user_id", user_data["user_id"])
                     .eq("created_at", client_date)
+                    .eq("account_id", account_id)
                     .order("id")
                     .execute()
                 )
@@ -274,6 +435,51 @@ def get_bookings(token):
 
     except Exception as e:
         logging.error(f"Error in GET /api/resource: {str(e)}")
+        return jsonify({"error": "Internal server error", "status": "error"}), 500
+
+
+@routes.route("/switch-account", methods=["GET"])
+@require_bearer_token
+def switch_account(token):
+    try:
+        account_id = request.args.get("account_id", None)
+        user_data = decode_jwt_token(token)
+        check_user = (
+            supabase.table("users").select("*").eq("id", user_data["user_id"]).execute()
+        )
+        if not check_user.data:
+            return jsonify({"message": "User not found", "status": "error"}), 404
+        other_accounts = (
+            json.loads(check_user.data[0]["other_clubready_accounts"])
+            if check_user.data[0]["other_clubready_accounts"]
+            else None
+        )
+        if other_accounts:
+            if account_id:
+                for account in other_accounts:
+                    if account["id"] == account_id:
+                        account["active"] = True
+                    else:
+                        account["active"] = False
+                other_accounts = json.dumps(other_accounts)
+                supabase.table("users").update(
+                    {"other_clubready_accounts": other_accounts}
+                ).eq("id", user_data["user_id"]).execute()
+            else:
+                for account in other_accounts:
+                    account["active"] = False
+                other_accounts = json.dumps(other_accounts)
+                supabase.table("users").update(
+                    {"other_clubready_accounts": other_accounts}
+                ).eq("id", user_data["user_id"]).execute()
+        else:
+            return jsonify({"message": "No accounts found", "status": "error"}), 404
+        return (
+            jsonify({"message": "Account switched successfully", "status": "success"}),
+            200,
+        )
+    except Exception as e:
+        logging.error(f"Error in POST /api/resource: {str(e)}")
         return jsonify({"error": "Internal server error", "status": "error"}), 500
 
 
@@ -431,6 +637,7 @@ def get_ai_logic(token):
             supabase.table("robot_process_automation_notes_records")
             .select("*")
             .eq("flexologist_name", flexologist_name)
+            .eq("first_timer", "NO")
             .gte("created_at", start_date)
             .lt("created_at", end_date)
             .execute()

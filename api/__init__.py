@@ -18,6 +18,7 @@ from .notification import init_notification
 from .admin.dashboard_routes import init_dashboard_routes
 from .admin.analytics_routes import init_analytics_routes
 from .admin.user_management import init_user_management_routes
+from .stretchnote.settings import init_note_settings_routes
 
 
 def create_app():
@@ -68,6 +69,7 @@ def create_app():
     init_notification(app)
     init_dashboard_routes(app)
     init_analytics_routes(app)
+    init_note_settings_routes(app)
     init_user_management_routes(app)
 
     return app

@@ -500,6 +500,7 @@ async def get_user_bookings_from_clubready(user_details, max_concurrency=3):
 
                         all_bookings = []
                         failed_locations = []
+                        location = None
                         if "Dashboard" in current_url:
                             await page.goto("https://scheduling.clubready.com/day")
                             await page.wait_for_load_state("networkidle", timeout=0)
@@ -900,11 +901,15 @@ async def get_user_bookings_from_clubready(user_details, max_concurrency=3):
                             "message": message,
                             "bookings": all_bookings,
                             "failed_locations": failed_locations,
-                            "successful_locations": [
-                                loc
-                                for loc in location_texts
-                                if loc not in failed_locations
-                            ],
+                            "successful_locations": (
+                                [location]
+                                if "Dashboard" in current_url
+                                else [
+                                    loc
+                                    for loc in location_texts
+                                    if loc not in failed_locations
+                                ]
+                            ),
                         }
                         return response
 

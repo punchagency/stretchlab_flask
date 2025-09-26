@@ -92,6 +92,34 @@ def update_notification(token):
         return jsonify({"message": "Internal server error", "status": "error"}), 500
 
 
+@routes.route("/mark-all-as-read", methods=["GET"])
+@require_bearer_token
+def mark_all_as_read(token):
+    try:
+        decoded_user = decode_jwt_token(token)
+        user = (
+            supabase.table("users")
+            .select("*")
+            .eq("id", decoded_user["user_id"])
+            .execute()
+            .data[0]
+        )
+        if not user:
+            return jsonify({"message": "User not found"}), 404
+        supabase.table("notifications").update({"is_read": True}).eq(
+            "user_id", decoded_user["user_id"]
+        ).execute()
+        return (
+            jsonify(
+                {"message": "All notifications marked as read", "status": "success"}
+            ),
+            200,
+        )
+    except Exception as e:
+        logging.error(f"Error in POST /notification/mark-all-as-read: {str(e)}")
+        return jsonify({"message": "Internal server error", "status": "error"}), 500
+
+
 @routes.route("/delete/<notification_id>", methods=["DELETE"])
 @require_bearer_token
 def delete_notification(token, notification_id):
