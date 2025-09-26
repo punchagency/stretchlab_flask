@@ -296,171 +296,112 @@ async def fetch_bookings_for_location(page, base_url, location_text, semaphore):
             await option.click()
             await page.click("input[name='Submit2']")
             await page.wait_for_load_state("networkidle", timeout=0)
-            await page.goto("https://scheduling.clubready.com/day")
+            await page.goto("https://app.clubready.com/admin/schedulingdayview.asp")
+
             await page.wait_for_load_state("networkidle", timeout=0)
 
-            await page.wait_for_selector(
-                ".spinner-background", state="hidden", timeout=40000
+            print(location_text)
+
+            my_booking_tab = await page.wait_for_selector(
+                "#dvtab1", state="visible", timeout=40000
+            )
+            await my_booking_tab.click()
+
+            all_bookings_cards = []
+
+            all_bookings_cards = (
+                await page.query_selector_all("table[class*='bookby']")
+                if await page.query_selector_all("table[class*='bookby']")
+                else []
             )
 
-            await page.click("#dropdown-button")
-            await page.wait_for_selector(
-                ".sidebar-events-filter-menu", state="visible", timeout=2000
-            )
-            my_filter = await page.query_selector(".dropdown--item:has(input#only-me)")
-            if not my_filter:
-                print(f"No 'only-me' filter found for location: {location_text}")
+            if not all_bookings_cards:
                 return []
 
-            await page.click(".dropdown--item:has(input#only-me)")
-            container = await page.query_selector_all(".sidebar-section-content")
-
-            all_div_selectors = []
-            for cont in container:
-                div_selector = await cont.query_selector_all(
-                    "div[class*='sidebar-event-card']"
+            print(f"Found {len(all_bookings_cards)} bookings")
+            for table in all_bookings_cards:
+                first_timer = (
+                    "YES"
+                    if await table.query_selector(
+                        "table tbody tr td:nth-child(3) span[title='first time visitor']"
+                    )
+                    else "NO"
                 )
-                all_div_selectors.extend(div_selector)
+                active = "YES"
 
-            print(f"Total event cards found: {len(all_div_selectors)}")
-            await page.click("#dropdown-button")
-            await page.wait_for_selector(
-                ".sidebar-events-filter-menu", state="hidden", timeout=2000
-            )
-
-            if all_div_selectors:
-                print(
-                    f"Found {len(all_div_selectors)} event cards for location: {location_text}"
+                client_name_elem = await table.query_selector(
+                    "table tbody tr td:nth-child(3) a strong"
+                )
+                client_name = (
+                    await client_name_elem.inner_text() if client_name_elem else "N/A"
                 )
 
-                for div in all_div_selectors:
-                    event_date = await (
-                        await div.query_selector(".event-date")
-                    ).inner_text()
-                    past = "previous-event" in await div.get_attribute("id")
-                    await div.click()
-                    modal_details = await page.wait_for_selector(
-                        ".booking-panel", state="visible"
-                    )
-                    await page.wait_for_function(
-                        expression="""
-                        (element) => {
-                            const loaders = element.querySelectorAll('[class*="spinner"]');
-                            return element && element.offsetParent !== null && loaders.length === 0;
-                        }
-                        """,
-                        arg=modal_details,
-                        timeout=20000,
-                    )
-                    first_timer = (
-                        "YES"
-                        if await modal_details.query_selector(
-                            ".booking-header-tags .text-first-visit"
-                        )
-                        else "NO"
-                    )
-                    if await modal_details.query_selector(
-                        ".client-membership-tags .container-active"
-                    ):
-                        active = "YES"
-                    else:
-                        lead_type_elem = await modal_details.query_selector(
-                            ".membership-info .lead-type"
-                        )
-                        if (
-                            lead_type_elem
-                            and await lead_type_elem.inner_text() == "Employee"
-                        ):
-                            active = "YES"
-                        else:
-                            future_bookings_elem = await modal_details.query_selector(
-                                ".future-bookings .details-info"
-                            )
-                            if future_bookings_elem:
-                                try:
-                                    if int(await future_bookings_elem.inner_text()) > 0:
-                                        active = "YES"
-                                    else:
-                                        active = "NO"
-                                except ValueError:
-                                    active = "NO"
-                    client_name_elem = await modal_details.query_selector(
-                        "#client-name"
-                    )
-                    client_name = (
-                        await client_name_elem.inner_text()
-                        if client_name_elem
-                        else "N/A"
-                    )
+                booking_number_elem = await table.query_selector(
+                    "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
+                )
+                booking_number = (
+                    await booking_number_elem.inner_text()
+                    if booking_number_elem
+                    else "N/A"
+                )
+                booking_id = (
+                    booking_number.lower().split("#")[1].strip()
+                    if "#" in booking_number.lower()
+                    else "N/A"
+                )
 
-                    booking_number_elem = await modal_details.query_selector(
-                        ".details-tab .details-row"
-                    )
-                    booking_number = (
-                        await booking_number_elem.inner_text()
-                        if booking_number_elem
-                        else "N/A"
-                    )
-                    booking_id = (
-                        booking_number.lower().split("booking: #")[1].strip()
-                        if "booking: #" in booking_number.lower()
-                        else "N/A"
-                    )
+                workout_type_elem = await table.query_selector(
+                    "table tbody tr td:nth-child(2) div:nth-child(2) strong"
+                )
+                workout_type = (
+                    await workout_type_elem.inner_text() if workout_type_elem else "N/A"
+                )
 
-                    workout_type_elem = await modal_details.query_selector(
-                        ".booking-title"
-                    )
-                    workout_type = (
-                        await workout_type_elem.inner_text()
-                        if workout_type_elem
+                flexologist_name_elem = await table.query_selector(
+                    "table tbody tr td:nth-child(2) div:nth-child(3) strong"
+                )
+                flexologist_name = (
+                    await flexologist_name_elem.inner_text()
+                    if flexologist_name_elem
+                    else "N/A"
+                )
+
+                phone_elem = await table.query_selector(
+                    "table tbody tr td:nth-child(3) .regtxt2"
+                )
+                phone_text = await phone_elem.inner_text() if phone_elem else "N/A"
+                if ":" in phone_text:
+                    phone = phone_text.split(":")[1].strip()
+                else:
+                    phone = phone_text
+
+                event_date_elem = await table.query_selector(
+                    "table tbody tr td:nth-child(2) .headertxt"
+                )
+                event_date = (
+                    await event_date_elem.inner_text() if event_date_elem else "N/A"
+                )
+                print(location_text)
+                result = {
+                    "client_name": client_name,
+                    "booking_id": booking_id,
+                    "workout_type": workout_type,
+                    "flexologist_name": flexologist_name.split("with")[1]
+                    .strip()
+                    .lower(),
+                    "phone": phone,
+                    "booking_time": (
+                        event_date.split("-")[0].strip()
+                        if event_date != "N/A"
                         else "N/A"
-                    )
-
-                    flexologist_name_elem = await modal_details.query_selector(
-                        ".avatar-name-container .name-container .name"
-                    )
-                    flexologist_name = (
-                        await flexologist_name_elem.inner_text()
-                        if flexologist_name_elem
-                        else "N/A"
-                    )
-
-                    phone_elem = await modal_details.query_selector(
-                        "#selected-phone-button .text"
-                    )
-                    phone = await phone_elem.inner_text() if phone_elem else "N/A"
-
-                    booking_time_elem = await modal_details.query_selector(
-                        ".datetime-value .time-value"
-                    )
-                    booking_time = (
-                        await booking_time_elem.inner_text()
-                        if booking_time_elem
-                        else "N/A"
-                    )
-                    result = {
-                        "client_name": client_name,
-                        "booking_id": booking_id,
-                        "workout_type": workout_type,
-                        "flexologist_name": flexologist_name,
-                        "phone": phone,
-                        "booking_time": booking_time,
-                        "event_date": event_date,
-                        "past": past,
-                        "first_timer": first_timer,
-                        "active": active,
-                        "location": location_text,
-                    }
-                    all_bookings.append(result)
-
-                    close_btn = await modal_details.query_selector("#header-close")
-                    if close_btn:
-                        await close_btn.wait_for_element_state("visible")
-                        await close_btn.wait_for_element_state("stable")
-                        await close_btn.click()
-                        await page.wait_for_selector(".booking-panel", state="hidden")
-                    else:
-                        print("Close button not found")
+                    ),
+                    "event_date": event_date,
+                    "past": False,
+                    "first_timer": first_timer,
+                    "active": active,
+                    "location": location_text,
+                }
+                all_bookings.append(result)
 
             return all_bookings
 
@@ -502,203 +443,138 @@ async def get_user_bookings_from_clubready(user_details, max_concurrency=3):
                         failed_locations = []
                         location = None
                         if "Dashboard" in current_url:
-                            await page.goto("https://scheduling.clubready.com/day")
+                            await page.goto(
+                                "https://app.clubready.com/admin/schedulingdayview.asp"
+                            )
                             await page.wait_for_load_state("networkidle", timeout=0)
 
-                            await page.wait_for_selector(
-                                ".spinner-background", state="hidden", timeout=40000
-                            )
                             location_element = await page.query_selector(
-                                "#menu-location .location-name"
+                                "#smalltopmenu .club-name"
                             )
                             location = await location_element.inner_text()
+                            print(location)
 
-                            await page.click("#dropdown-button")
-                            await page.wait_for_selector(
-                                ".sidebar-events-filter-menu",
-                                state="visible",
-                                timeout=2000,
+                            my_booking_tab = await page.wait_for_selector(
+                                "#dvtab1", state="visible", timeout=40000
                             )
+                            await my_booking_tab.click()
 
-                            await page.click(".dropdown--item:has(input#only-me)")
-                            container = await page.query_selector_all(
-                                ".sidebar-section-content"
-                            )
+                            all_bookings_cards = []
 
-                            all_div_selectors = []
-                            for cont in container:
-                                div_selector = await cont.query_selector_all(
-                                    "div[class*='sidebar-event-card']"
+                            all_bookings_cards = (
+                                await page.query_selector_all("table[class*='bookby']")
+                                if await page.query_selector_all(
+                                    "table[class*='bookby']"
                                 )
-                                all_div_selectors.extend(div_selector)
-
-                            await page.click("#dropdown-button")
-                            await page.wait_for_selector(
-                                ".sidebar-events-filter-menu",
-                                state="hidden",
-                                timeout=2000,
+                                else []
                             )
 
-                            if all_div_selectors:
-                                print(f"Found {len(all_div_selectors)} event cards")
-                                for div in all_div_selectors:
-                                    event_date = await (
-                                        await div.query_selector(".event-date")
-                                    ).inner_text()
-                                    past = "previous-event" in await div.get_attribute(
-                                        "id"
-                                    )
-                                    await div.click()
-                                    modal_details = await page.wait_for_selector(
-                                        ".booking-panel", state="visible"
-                                    )
-                                    await page.wait_for_function(
-                                        expression="""
-                                    (element) => {
-                                        const loaders = element.querySelectorAll('[class*="spinner"]');
-                                        return element && element.offsetParent !== null && loaders.length === 0;
-                                    }
-                                    """,
-                                        arg=modal_details,
-                                        timeout=20000,
-                                    )
-                                    first_timer = (
-                                        "YES"
-                                        if await modal_details.query_selector(
-                                            ".booking-header-tags .text-first-visit"
-                                        )
-                                        else "NO"
-                                    )
-                                    if await modal_details.query_selector(
-                                        ".client-membership-tags .container-active"
-                                    ):
-                                        active = "YES"
-                                    else:
-                                        lead_type_elem = (
-                                            await modal_details.query_selector(
-                                                ".membership-info .lead-type"
-                                            )
-                                        )
-                                        if (
-                                            lead_type_elem
-                                            and await lead_type_elem.inner_text()
-                                            == "Employee"
-                                        ):
-                                            active = "YES"
-                                        else:
-                                            future_bookings_elem = (
-                                                await modal_details.query_selector(
-                                                    ".future-bookings .details-info"
-                                                )
-                                            )
-                                            if future_bookings_elem:
-                                                try:
-                                                    if (
-                                                        int(
-                                                            await future_bookings_elem.inner_text()
-                                                        )
-                                                        > 0
-                                                    ):
-                                                        active = "YES"
-                                                    else:
-                                                        active = "NO"
-                                                except ValueError:
-                                                    active = "NO"
+                            if not all_bookings_cards:
+                                return {
+                                    "status": True,
+                                    "message": "No bookings found",
+                                    "bookings": [],
+                                    "failed_locations": [],
+                                    "successful_locations": [location],
+                                }
 
-                                    client_name_elem = (
-                                        await modal_details.query_selector(
-                                            "#client-name"
-                                        )
+                            print(f"Found {len(all_bookings_cards)} bookings")
+                            for table in all_bookings_cards:
+                                first_timer = (
+                                    "YES"
+                                    if await table.query_selector(
+                                        "table tbody tr td:nth-child(3) span[title='first time visitor']"
                                     )
-                                    client_name = (
-                                        await client_name_elem.inner_text()
-                                        if client_name_elem
-                                        else "N/A"
-                                    )
+                                    else "NO"
+                                )
+                                active = "YES"
 
-                                    booking_number_elem = (
-                                        await modal_details.query_selector(
-                                            ".details-tab .details-row"
-                                        )
-                                    )
-                                    booking_number = (
-                                        await booking_number_elem.inner_text()
-                                        if booking_number_elem
-                                        else "N/A"
-                                    )
-                                    booking_id = (
-                                        booking_number.lower()
-                                        .split("booking: #")[1]
-                                        .strip()
-                                        if "booking: #" in booking_number.lower()
-                                        else "N/A"
-                                    )
+                                client_name_elem = await table.query_selector(
+                                    "table tbody tr td:nth-child(3) a strong"
+                                )
+                                client_name = (
+                                    await client_name_elem.inner_text()
+                                    if client_name_elem
+                                    else "N/A"
+                                )
 
-                                    workout_type_elem = (
-                                        await modal_details.query_selector(
-                                            ".booking-title"
-                                        )
-                                    )
-                                    workout_type = (
-                                        await workout_type_elem.inner_text()
-                                        if workout_type_elem
-                                        else "N/A"
-                                    )
+                                booking_number_elem = await table.query_selector(
+                                    "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
+                                )
+                                booking_number = (
+                                    await booking_number_elem.inner_text()
+                                    if booking_number_elem
+                                    else "N/A"
+                                )
+                                booking_id = (
+                                    booking_number.lower().split("#")[1].strip()
+                                    if "#" in booking_number.lower()
+                                    else "N/A"
+                                )
 
-                                    flexologist_name_elem = await modal_details.query_selector(
-                                        ".avatar-name-container .name-container .name"
-                                    )
-                                    flexologist_name = (
-                                        await flexologist_name_elem.inner_text()
-                                        if flexologist_name_elem
-                                        else "N/A"
-                                    )
+                                workout_type_elem = await table.query_selector(
+                                    "table tbody tr td:nth-child(2) div:nth-child(2) strong"
+                                )
+                                workout_type = (
+                                    await workout_type_elem.inner_text()
+                                    if workout_type_elem
+                                    else "N/A"
+                                )
 
-                                    phone_elem = await modal_details.query_selector(
-                                        "#selected-phone-button .text"
-                                    )
-                                    phone = (
-                                        await phone_elem.inner_text()
-                                        if phone_elem
-                                        else "N/A"
-                                    )
+                                flexologist_name_elem = await table.query_selector(
+                                    "table tbody tr td:nth-child(2) div:nth-child(3) strong"
+                                )
+                                flexologist_name = (
+                                    await flexologist_name_elem.inner_text()
+                                    if flexologist_name_elem
+                                    else "N/A"
+                                )
 
-                                    booking_time_elem = (
-                                        await modal_details.query_selector(
-                                            ".datetime-value .time-value"
-                                        )
-                                    )
-                                    booking_time = (
-                                        await booking_time_elem.inner_text()
-                                        if booking_time_elem
-                                        else "N/A"
-                                    )
-                                    result = {
-                                        "client_name": client_name,
-                                        "booking_id": booking_id,
-                                        "workout_type": workout_type,
-                                        "flexologist_name": flexologist_name,
-                                        "phone": phone,
-                                        "booking_time": booking_time,
-                                        "event_date": event_date,
-                                        "past": past,
-                                        "first_timer": first_timer,
-                                        "active": active,
-                                        "location": location,
-                                    }
-                                    all_bookings.append(result)
+                                phone_elem = await table.query_selector(
+                                    "table tbody tr td:nth-child(3) .regtxt2"
+                                )
+                                phone_text = (
+                                    await phone_elem.inner_text()
+                                    if phone_elem
+                                    else "N/A"
+                                )
+                                if ":" in phone_text:
+                                    phone = phone_text.split(":")[1].strip()
+                                else:
+                                    phone = phone_text
 
-                                    close_btn = await modal_details.query_selector(
-                                        "#header-close"
-                                    )
-                                    if close_btn:
-                                        await close_btn.click()
-                                        await page.wait_for_selector(
-                                            ".booking-panel", state="hidden"
-                                        )
-                                        print("Close button clicked")
-                                    else:
-                                        print("Close button not found")
+                                event_date_elem = await table.query_selector(
+                                    "table tbody tr td:nth-child(2) .headertxt"
+                                )
+                                event_date = (
+                                    await event_date_elem.inner_text()
+                                    if event_date_elem
+                                    else "N/A"
+                                )
+                                print(location)
+                                result = {
+                                    "client_name": client_name,
+                                    "booking_id": booking_id,
+                                    "workout_type": workout_type,
+                                    "flexologist_name": flexologist_name.split("with")[
+                                        1
+                                    ]
+                                    .strip()
+                                    .lower(),
+                                    "phone": phone,
+                                    "booking_time": (
+                                        event_date.split("-")[0].strip()
+                                        if event_date != "N/A"
+                                        else "N/A"
+                                    ),
+                                    "event_date": event_date,
+                                    "past": False,
+                                    "first_timer": first_timer,
+                                    "active": active,
+                                    "location": location,
+                                }
+                                all_bookings.append(result)
+
                         else:
                             await page.wait_for_selector("select[name='stores']")
                             select_element = await page.query_selector(
@@ -736,6 +612,7 @@ async def get_user_bookings_from_clubready(user_details, max_concurrency=3):
                                     # Use context managers for each location's browser context
                                     new_context = await browser.new_context()
                                     contexts_to_cleanup.append(new_context)
+                                    print(username, password)
 
                                     new_page = await new_context.new_page()
                                     await new_page.goto(INITIAL_URL)
@@ -944,253 +821,156 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
         page.wait_for_load_state("networkidle", timeout=0)
         base_url = page.url
         if "Dashboard" in base_url:
-            page.goto("https://scheduling.clubready.com/day")
+            page.goto("https://app.clubready.com/admin/schedulingdayview.asp")
             page.wait_for_load_state("networkidle", timeout=0)
-            page.wait_for_selector(".spinner-background", state="hidden", timeout=40000)
 
-            page.click("#dropdown-button")
-            page.wait_for_selector(
-                ".sidebar-events-filter-menu",
-                state="visible",
-                timeout=2000,
+            my_booking_tab = page.wait_for_selector(
+                "#dvtab1", state="visible", timeout=40000
+            )
+            my_booking_tab.click()
+            all_bookings_cards = []
+
+            all_bookings_cards = (
+                page.query_selector_all("table[class*='bookby']")
+                if page.query_selector_all("table[class*='bookby']")
+                else []
             )
 
-            page.click(".dropdown--item:has(input#only-me)")
-            container = page.query_selector(".sidebar-today-events")
-            page.click("#dropdown-button")
-            page.wait_for_selector(
-                ".sidebar-events-filter-menu",
-                state="hidden",
-                timeout=2000,
-            )
-            unpaid_modal = None
-            if container:
-                div_selector = container.query_selector_all(
-                    "div[class*='sidebar-event-card']"
+            unpaid_modal = False
+            if len(all_bookings_cards) > 0:
+                print(
+                    f"Bookings found for location: {location} {len(all_bookings_cards)}"
                 )
-                if len(div_selector) > 0:
-                    print("Table with class starting with 'ids' found.")
-                    print(div_selector)
 
-                    matching_booking = None
-                    matching_index = -1
+                matching_booking = None
+                matching_index = -1
 
-                    for i, div in enumerate(div_selector):
-                        event_date = div.query_selector(".event-date").inner_text()
-                        if event_date == period:
-                            matching_booking = div
-                            matching_index = i
-                            break
+                for i, div in enumerate(all_bookings_cards):
+                    event_date = div.query_selector(
+                        "table tbody tr td:nth-child(2) .headertxt"
+                    ).inner_text()
+                    print(event_date, period)
+                    print(event_date == period)
+                    if event_date == period:
+                        matching_booking = div
+                        matching_index = i
+                        break
 
-                    if (
-                        matching_booking
-                        and matching_index >= 0
-                        and matching_index + 1 < len(div_selector)
-                    ):
-                        check_client = (
-                            div_selector[matching_index + 1]
-                            .query_selector(".event-customer")
-                            .inner_text()
-                            .lower()
+                if (
+                    matching_booking
+                    and matching_index >= 0
+                    and matching_index + 1 < len(all_bookings_cards)
+                ):
+                    check_client = (
+                        all_bookings_cards[matching_index + 1]
+                        .query_selector("table tbody tr td:nth-child(3) a strong")
+                        .inner_text()
+                        .lower()
+                    )
+                    if check_client == client_name:
+                        same_client_booking = all_bookings_cards[matching_index + 1]
+                        same_client_period = same_client_booking.query_selector(
+                            "table tbody tr td:nth-child(2) .headertxt"
+                        ).inner_text()
+                        print(
+                            f"Found next booking for same client at index {matching_index + 1}"
                         )
-                        if check_client == client_name:
-                            same_client_booking = div_selector[matching_index + 1]
-                            same_client_period = same_client_booking.query_selector(
-                                ".event-date"
-                            ).inner_text()
-                            print(
-                                f"Found next booking for same client at index {matching_index + 1}"
-                            )
-                        else:
-                            print(
-                                f"Found next booking for different client at index {matching_index + 1}"
-                            )
-
-                    if matching_booking:
-                        matching_booking.click()
-                        modal_details = page.wait_for_selector(
-                            ".booking-panel", state="visible"
-                        )
-                        page.wait_for_function(
-                            """
-                                                    (element) => {                                 
-                                                        const loaders = element.querySelectorAll('[class*="spinner"]');
-                                                        return element && element.offsetParent !== null && loaders.length === 0;
-                                                    }
-                                                    """,
-                            arg=modal_details,
-                            timeout=20000,
-                        )
-
-                        open_notes_btn = modal_details.query_selector(
-                            "button[id='make-note-footer']"
-                        )
-
-                        if open_notes_btn:
-                            open_notes_btn.click()
-
-                            note_modal = page.wait_for_selector(
-                                "div[class='desktop-modal add-note']",
-                                state="visible",
-                                timeout=10000,
-                            )
-                            if note_modal:
-                                subject_input = note_modal.query_selector(
-                                    "input[id='subject']"
-                                )
-                                notes_textarea = note_modal.query_selector(
-                                    "textarea[id='text']"
-                                )
-                                if subject_input and notes_textarea:
-                                    note_modal.query_selector("#tag-0").click()
-                                    subject_input.fill("Session Notes")
-                                    notes_textarea.fill(notes)
-
-                                    submit_btn = note_modal.query_selector(
-                                        "button[id='add-note-btn']"
-                                    )
-                                    if submit_btn:
-
-                                        submit_btn.click()
-                                        page.wait_for_selector(
-                                            ".spinner-background",
-                                            state="hidden",
-                                            timeout=40000,
-                                        )
-
-                                else:
-                                    print("Subject input or notes textarea not found")
-                                close_btn = note_modal.query_selector(
-                                    "div[class='desktop-modal-header-close']"
-                                )
-                                if close_btn:
-                                    close_btn.click()
-
-                                modal_details.query_selector(
-                                    "button[id='log-status-show']"
-                                ).click()
-
-                                try:
-                                    unpaid_modal = page.wait_for_selector(
-                                        ".log-as-completed",
-                                        state="visible",
-                                        timeout=10000,
-                                    )
-                                    if unpaid_modal:
-                                        unpaid_text_area = unpaid_modal.query_selector(
-                                            "textarea[id='optional-internal-note-mobile']"
-                                        )
-                                        if unpaid_text_area:
-                                            unpaid_text_area.fill(
-                                                "Unpaid session logged off"
-                                            )
-                                            unpaid_modal.query_selector(
-                                                "button[id='log-and-go-to-pos-button']"
-                                            ).click()
-                                            page.wait_for_timeout(500)
-                                            spinner = page.query_selector(
-                                                ".spinner-background"
-                                            )
-                                            if spinner:
-                                                page.wait_for_selector(
-                                                    ".spinner-background",
-                                                    state="hidden",
-                                                    timeout=40000,
-                                                )
-                                        # unpaid_modal.query_selector(
-                                        #     "button[id='log-and-go-to-pos-button']"
-                                        # ).click()
-                                        # page.wait_for_timeout(500)
-                                        # unpaid_modal.query_selector(
-                                        #     ".desktop-modal-header-close"
-                                        # ).click()
-                                except:
-                                    page.wait_for_selector(
-                                        ".spinner-background",
-                                        state="hidden",
-                                        timeout=40000,
-                                    )
-
                     else:
-                        print("No matching booking found")
-
-                    if modal_details:
-                        close_btn = modal_details.query_selector("#header-close")
-                        if close_btn:
-                            close_btn.click()
-                            page.wait_for_selector(
-                                ".booking-panel",
-                                state="hidden",
-                            )
-                            print("close button clicked")
-                        else:
-                            print("Close button not found")
-
-                    if same_client_booking:
-                        same_client_booking.click()
-                        modal_details = page.wait_for_selector(
-                            ".booking-panel", state="visible"
+                        print(
+                            f"Found next booking for different client at index {matching_index + 1}"
                         )
-                        page.wait_for_function(
-                            """
-                                (element) => {                                 
-                                    const loaders = element.querySelectorAll('[class*="spinner"]');
-                                    return element && element.offsetParent !== null && loaders.length === 0;
-                                }
-                                """,
-                            arg=modal_details,
-                            timeout=20000,
+
+                if matching_booking:
+                    booking_number_elem = matching_booking.query_selector(
+                        "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
+                    )
+                    booking_number_elem.click()
+
+                    more_modal = page.wait_for_selector(
+                        ".fancybox-skin",
+                        state="visible",
+                        timeout=10000,
+                    )
+                    log_off_tab = more_modal.query_selector("#subnav2 li:last-child")
+                    log_off_tab.click()
+                    page.wait_for_function(
+                        "element => !element.isConnected", arg=log_off_tab
+                    )
+                    page.wait_for_selector("#subnav2 li.activesublink2", timeout=10000)
+                    form_details = page.wait_for_selector(
+                        "#bkdetailform", state="visible", timeout=40000
+                    )
+                    page.wait_for_function(
+                        "element => element.isConnected && element.offsetParent !== null",
+                        arg=form_details,
+                    )
+
+                    booking_successful = page.query_selector(".baseline #lg_stat5")
+                    if booking_successful:
+                        booking_successful.click()
+
+                    page.wait_for_timeout(400)
+                    text_area = more_modal.query_selector("#note")
+                    text_area.fill(notes)
+                    log_off_btn = page.query_selector("#logbutton input:first-child")
+
+                    log_off_btn.click()
+                    page.wait_for_timeout(600)
+
+                    unpaid_modal = (
+                        True
+                        if matching_booking.query_selector(
+                            "table tbody tr td:nth-child(3) .regtxt"
                         )
-                        modal_details.query_selector(
-                            "button[id='log-status-show']"
-                        ).click()
-                        try:
-                            unpaid_modal = page.wait_for_selector(
-                                ".log-as-completed",
-                                state="visible",
-                                timeout=10000,
-                            )
-                            if unpaid_modal:
-                                unpaid_text_area = unpaid_modal.query_selector(
-                                    "textarea[id='optional-internal-note-mobile']"
-                                )
-                                if unpaid_text_area:
-                                    unpaid_text_area.fill("Unpaid session logged off")
-                                    unpaid_modal.query_selector(
-                                        "button[id='log-and-go-to-pos-button']"
-                                    ).click()
-                                    page.wait_for_timeout(500)
-                                    spinner = page.query_selector(".spinner-background")
-                                    if spinner:
-                                        page.wait_for_selector(
-                                            ".spinner-background",
-                                            state="hidden",
-                                            timeout=40000,
-                                        )
-                                # unpaid_modal.query_selector(
-                                #     ".desktop-modal-header-close"
-                                # ).click()
-                        except:
-                            page.wait_for_selector(
-                                ".spinner-background",
-                                state="hidden",
-                                timeout=40000,
-                            )
-                        close_btn = modal_details.query_selector("#header-close")
-                        if close_btn:
-                            close_btn.click()
-                            page.wait_for_selector(
-                                ".booking-panel",
-                                state="hidden",
-                            )
-                            print("close button clicked")
-                        else:
-                            print("Close button not found")
+                        else False
+                    )
 
                 else:
-                    print("No bookings found")
+                    raise Exception("No matching booking found")
+
+                if same_client_booking:
+                    booking_number_elem = same_client_booking.query_selector(
+                        "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
+                    )
+                    booking_number_elem.click()
+
+                    more_modal = page.wait_for_selector(
+                        ".fancybox-skin",
+                        state="visible",
+                        timeout=10000,
+                    )
+                    log_off_tab = more_modal.query_selector("#subnav2 li:last-child")
+                    log_off_tab.click()
+                    page.wait_for_function(
+                        "element => !element.isConnected", arg=log_off_tab
+                    )
+                    page.wait_for_selector("#subnav2 li.activesublink2", timeout=10000)
+                    form_details = page.wait_for_selector(
+                        "#bkdetailform", state="visible", timeout=40000
+                    )
+                    page.wait_for_function(
+                        "element => element.isConnected && element.offsetParent !== null",
+                        arg=form_details,
+                    )
+
+                    booking_successful = page.query_selector(".baseline #lg_stat5")
+                    if booking_successful:
+                        booking_successful.click()
+
+                    page.wait_for_timeout(400)
+                    log_off_btn = page.query_selector("#logbutton input:first-child")
+
+                    log_off_btn.click()
+
+                    unpaid_modal = (
+                        True
+                        if matching_booking.query_selector(
+                            "table tbody tr td:nth-child(3) .regtxt"
+                        )
+                        else False
+                    )
             else:
-                print("No container found")
+                raise Exception("No container found")
             # remove_notes(user_id, all_bookings)
             return {
                 "status": True,
@@ -1215,271 +995,168 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
                 option.click()
                 page.click("input[name='Submit2']")
                 page.wait_for_load_state("networkidle", timeout=0)
-                page.goto("https://scheduling.clubready.com/day")
+                page.goto("https://app.clubready.com/admin/schedulingdayview.asp")
                 page.wait_for_load_state("networkidle", timeout=0)
-                page.wait_for_selector(
-                    ".spinner-background", state="hidden", timeout=40000
+                my_booking_tab = page.wait_for_selector(
+                    "#dvtab1", state="visible", timeout=40000
+                )
+                my_booking_tab.click()
+                all_bookings_cards = []
+
+                all_bookings_cards = (
+                    page.query_selector_all("table[class*='bookby']")
+                    if page.query_selector_all("table[class*='bookby']")
+                    else []
                 )
 
-                page.click("#dropdown-button")
-                page.wait_for_selector(
-                    ".sidebar-events-filter-menu",
-                    state="visible",
-                    timeout=2000,
-                )
-
-                page.click(".dropdown--item:has(input#only-me)")
-                container = page.query_selector(".sidebar-today-events")
-                page.click("#dropdown-button")
-                page.wait_for_selector(
-                    ".sidebar-events-filter-menu",
-                    state="hidden",
-                    timeout=2000,
-                )
-                unpaid_modal = None
-                if container:
-                    div_selector = container.query_selector_all(
-                        "div[class*='sidebar-event-card']"
+                unpaid_modal = False
+                if len(all_bookings_cards) > 0:
+                    print(
+                        f"Bookings found for location: {location} {len(all_bookings_cards)}"
                     )
-                    if len(div_selector) > 0:
-                        print("Table with class starting with 'ids' found.")
-                        print(div_selector)
 
-                        # matching_booking = None
-                        # for div in div_selector:
-                        #     event_date = div.query_selector(".event-date").inner_text()
-                        #     if event_date == period:
-                        #         matching_booking = div
-                        #         break
-                        matching_booking = None
-                        print(period, "period")
-                        matching_index = -1
-                        for i, div in enumerate(div_selector):
-                            event_date = div.query_selector(".event-date").inner_text()
-                            print(event_date, "event_date")
-                            if event_date == period:
-                                matching_booking = div
-                                matching_index = i
-                                break
+                    matching_booking = None
+                    matching_index = -1
 
-                        if (
-                            matching_booking
-                            and matching_index >= 0
-                            and matching_index + 1 < len(div_selector)
-                        ):
-                            check_client = (
-                                div_selector[matching_index + 1]
-                                .query_selector(".event-customer")
-                                .inner_text()
-                                .lower()
+                    for i, div in enumerate(all_bookings_cards):
+                        event_date = div.query_selector(
+                            "table tbody tr td:nth-child(2) .headertxt"
+                        ).inner_text()
+                        print(event_date, period)
+                        print(event_date == period)
+                        if event_date == period:
+                            matching_booking = div
+                            matching_index = i
+                            break
+
+                    if (
+                        matching_booking
+                        and matching_index >= 0
+                        and matching_index + 1 < len(all_bookings_cards)
+                    ):
+                        check_client = (
+                            all_bookings_cards[matching_index + 1]
+                            .query_selector("table tbody tr td:nth-child(3) a strong")
+                            .inner_text()
+                            .lower()
+                        )
+                        if check_client == client_name:
+                            same_client_booking = all_bookings_cards[matching_index + 1]
+                            same_client_period = same_client_booking.query_selector(
+                                "table tbody tr td:nth-child(2) .headertxt"
+                            ).inner_text()
+                            print(
+                                f"Found next booking for same client at index {matching_index + 1}"
                             )
-                            if check_client == client_name:
-                                same_client_booking = div_selector[matching_index + 1]
-                                same_client_period = same_client_booking.query_selector(
-                                    ".event-date"
-                                ).inner_text()
-                                print(
-                                    f"Found next booking for same client at index {matching_index + 1}"
-                                )
-                            else:
-                                print(
-                                    f"Found next booking for different client at index {matching_index + 1}"
-                                )
-
-                        if matching_booking:
-                            matching_booking.click()
-                            modal_details = page.wait_for_selector(
-                                ".booking-panel", state="visible"
-                            )
-                            page.wait_for_function(
-                                """
-                                                        (element) => {                                 
-                                                            const loaders = element.querySelectorAll('[class*="spinner"]');
-                                                            return element && element.offsetParent !== null && loaders.length === 0;
-                                                        }
-                                                        """,
-                                arg=modal_details,
-                                timeout=20000,
-                            )
-
-                            open_notes_btn = modal_details.query_selector(
-                                "button[id='make-note-footer']"
-                            )
-
-                            if open_notes_btn:
-                                open_notes_btn.click()
-                                note_modal = page.wait_for_selector(
-                                    "div[class='desktop-modal add-note']",
-                                    state="visible",
-                                    timeout=10000,
-                                )
-                                if note_modal:
-                                    subject_input = note_modal.query_selector(
-                                        "input[id='subject']"
-                                    )
-                                    notes_textarea = note_modal.query_selector(
-                                        "textarea[id='text']"
-                                    )
-                                    if subject_input and notes_textarea:
-                                        note_modal.query_selector("#tag-0").click()
-                                        subject_input.fill("Session Notes")
-                                        notes_textarea.fill(notes)
-
-                                        submit_btn = note_modal.query_selector(
-                                            "button[id='add-note-btn']"
-                                        )
-                                        if submit_btn:
-
-                                            submit_btn.click()
-                                            page.wait_for_selector(
-                                                ".spinner-background",
-                                                state="hidden",
-                                                timeout=40000,
-                                            )
-
-                                    else:
-                                        print(
-                                            "Subject input or notes textarea not found"
-                                        )
-                                    close_btn = note_modal.query_selector(
-                                        "div[class='desktop-modal-header-close']"
-                                    )
-                                    if close_btn:
-                                        close_btn.click()
-
-                                        modal_details.query_selector(
-                                            "button[id='log-status-show']"
-                                        ).click()
-
-                                    try:
-                                        unpaid_modal = page.wait_for_selector(
-                                            ".log-as-completed",
-                                            state="visible",
-                                            timeout=10000,
-                                        )
-                                        if unpaid_modal:
-                                            unpaid_text_area = unpaid_modal.query_selector(
-                                                "textarea[id='optional-internal-note-mobile']"
-                                            )
-                                            if unpaid_text_area:
-                                                unpaid_text_area.fill(
-                                                    "Unpaid session logged off"
-                                                )
-                                                unpaid_modal.query_selector(
-                                                    "button[id='log-and-go-to-pos-button']"
-                                                ).click()
-                                                page.wait_for_timeout(500)
-                                                spinner = page.query_selector(
-                                                    ".spinner-background"
-                                                )
-                                                if spinner:
-                                                    page.wait_for_selector(
-                                                        ".spinner-background",
-                                                        state="hidden",
-                                                        timeout=40000,
-                                                    )
-                                            # page.wait_for_timeout(500)
-                                            # unpaid_modal.query_selector(
-                                            #     ".desktop-modal-header-close"
-                                            # ).click()
-                                    except:
-                                        page.wait_for_selector(
-                                            ".spinner-background",
-                                            state="hidden",
-                                            timeout=40000,
-                                        )
-
                         else:
-                            return {
-                                "status": False,
-                                "message": "No matching booking found",
-                            }
-
-                        if modal_details:
-                            close_btn = modal_details.query_selector("#header-close")
-                            if close_btn:
-                                close_btn.click()
-                                page.wait_for_selector(
-                                    ".booking-panel",
-                                    state="hidden",
-                                )
-                            else:
-                                print("Close button not found")
-
-                        if same_client_booking:
-                            same_client_booking.click()
-                            modal_details = page.wait_for_selector(
-                                ".booking-panel", state="visible"
+                            print(
+                                f"Found next booking for different client at index {matching_index + 1}"
                             )
-                            page.wait_for_function(
-                                """
-                                (element) => {                                 
-                                    const loaders = element.querySelectorAll('[class*="spinner"]');
-                                    return element && element.offsetParent !== null && loaders.length === 0;
-                                }
-                                """,
-                                arg=modal_details,
-                                timeout=20000,
+
+                    if matching_booking:
+                        print(notes)
+                        booking_number_elem = matching_booking.query_selector(
+                            "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
+                        )
+                        booking_number_elem.click()
+
+                        more_modal = page.wait_for_selector(
+                            ".fancybox-skin",
+                            state="visible",
+                            timeout=10000,
+                        )
+                        log_off_tab = more_modal.query_selector(
+                            "#subnav2 li:last-child"
+                        )
+                        log_off_tab.click()
+                        page.wait_for_function(
+                            "element => !element.isConnected", arg=log_off_tab
+                        )
+                        page.wait_for_selector(
+                            "#subnav2 li.activesublink2", timeout=10000
+                        )
+                        form_details = page.wait_for_selector(
+                            "#bkdetailform", state="visible", timeout=40000
+                        )
+                        page.wait_for_function(
+                            "element => element.isConnected && element.offsetParent !== null",
+                            arg=form_details,
+                        )
+
+                        booking_successful = page.query_selector(".baseline #lg_stat5")
+                        if booking_successful:
+                            booking_successful.click()
+
+                        page.wait_for_timeout(400)
+                        text_area = more_modal.query_selector("#note")
+                        text_area.fill(notes)
+
+                        log_off_btn = page.query_selector(
+                            "#logbutton input:first-child"
+                        )
+
+                        log_off_btn.click()
+                        page.wait_for_timeout(600)
+                        unpaid_modal = (
+                            True
+                            if matching_booking.query_selector(
+                                "table tbody tr td:nth-child(3) .regtxt"
                             )
-                            modal_details.query_selector(
-                                "button[id='log-status-show']"
-                            ).click()
-                            try:
-                                unpaid_modal = page.wait_for_selector(
-                                    ".log-as-completed",
-                                    state="visible",
-                                    timeout=10000,
-                                )
-                                if unpaid_modal:
-                                    unpaid_text_area = unpaid_modal.query_selector(
-                                        "textarea[id='optional-internal-note-mobile']"
-                                    )
-                                    if unpaid_text_area:
-                                        unpaid_text_area.fill(
-                                            "Unpaid session logged off"
-                                        )
-                                        unpaid_modal.query_selector(
-                                            "button[id='log-and-go-to-pos-button']"
-                                        ).click()
-                                        page.wait_for_timeout(500)
-                                        spinner = page.query_selector(
-                                            ".spinner-background"
-                                        )
-                                        if spinner:
-                                            page.wait_for_selector(
-                                                ".spinner-background",
-                                                state="hidden",
-                                                timeout=40000,
-                                            )
-                                    # unpaid_modal.query_selector(
-                                    #     "button[id='log-and-go-to-pos-button']"
-                                    # ).click()
-                                    # page.wait_for_timeout(500)
-                                    # unpaid_modal.query_selector(
-                                    #     ".desktop-modal-header-close"
-                                    # ).click()
-                            except:
-                                page.wait_for_selector(
-                                    ".spinner-background",
-                                    state="hidden",
-                                    timeout=40000,
-                                )
-                            close_btn = modal_details.query_selector("#header-close")
-                            if close_btn:
-                                close_btn.click()
-                                page.wait_for_selector(
-                                    ".booking-panel",
-                                    state="hidden",
-                                )
-                                print("close button clicked")
-                            else:
-                                print("Close button not found")
+                            else False
+                        )
+
                     else:
-                        print("No bookings found")
+                        raise Exception("No matching booking found")
+
+                    if same_client_booking:
+                        booking_number_elem = same_client_booking.query_selector(
+                            "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
+                        )
+                        booking_number_elem.click()
+
+                        more_modal = page.wait_for_selector(
+                            ".fancybox-skin",
+                            state="visible",
+                            timeout=10000,
+                        )
+                        log_off_tab = more_modal.query_selector(
+                            "#subnav2 li:last-child"
+                        )
+                        log_off_tab.click()
+                        page.wait_for_function(
+                            "element => !element.isConnected", arg=log_off_tab
+                        )
+                        page.wait_for_selector(
+                            "#subnav2 li.activesublink2", timeout=10000
+                        )
+                        form_details = page.wait_for_selector(
+                            "#bkdetailform", state="visible", timeout=40000
+                        )
+                        page.wait_for_function(
+                            "element => element.isConnected && element.offsetParent !== null",
+                            arg=form_details,
+                        )
+
+                        booking_successful = page.query_selector(".baseline #lg_stat5")
+                        if booking_successful:
+                            booking_successful.click()
+
+                        page.wait_for_timeout(400)
+                        log_off_btn = page.query_selector(
+                            "#logbutton input:first-child"
+                        )
+
+                        log_off_btn.click()
+                        unpaid_modal = (
+                            True
+                            if matching_booking.query_selector(
+                                "table tbody tr td:nth-child(3) .regtxt"
+                            )
+                            else False
+                        )
                 else:
-                    print("No container found")
+                    raise Exception("No container found")
                 # remove_notes(user_id, all_bookings)
-                print(unpaid_modal, "unpaid_modal")
                 return {
                     "status": True,
                     "same_client_period": same_client_period,

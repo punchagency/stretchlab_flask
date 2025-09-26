@@ -75,6 +75,12 @@ def update_clubready_details(token):
                 400,
             )
 
+        user = (
+            supabase.table("users").select("*").eq("id", user_data["user_id"]).execute()
+        )
+        if not user.data:
+            return jsonify({"message": "User not found", "status": "error"}), 404
+
         validate_clubready = clubready_login(data)
         if not validate_clubready["status"]:
             return (
@@ -82,12 +88,43 @@ def update_clubready_details(token):
                 400,
             )
 
-        supabase.table("users").update(
-            {
-                "clubready_username": data["username"],
-                "clubready_password": validate_clubready["hashed_password"],
-            }
-        ).eq("id", user_data["user_id"]).execute()
+        account_id = data.get("account_id", None)
+        if account_id:
+            other_accounts = (
+                json.loads(user.data[0]["other_clubready_accounts"])
+                if user.data[0]["other_clubready_accounts"]
+                else None
+            )
+            if not other_accounts:
+                return (
+                    jsonify(
+                        {
+                            "message": "No other clubready accounts found",
+                            "status": "error",
+                        }
+                    ),
+                    404,
+                )
+            for account in other_accounts:
+                if account["id"] == account_id:
+                    account["username"] = data["username"]
+                    account["password"] = validate_clubready["hashed_password"]
+                    break
+            other_accounts = json.dumps(other_accounts)
+            supabase.table("users").update(
+                {
+                    "other_clubready_accounts": other_accounts,
+                }
+            ).eq("id", user_data["user_id"]).execute()
+        else:
+            clubready_username = data["username"]
+            clubready_password = validate_clubready["hashed_password"]
+            supabase.table("users").update(
+                {
+                    "clubready_username": clubready_username,
+                    "clubready_password": clubready_password,
+                }
+            ).eq("id", user_data["user_id"]).execute()
 
         logging.info(
             f"Clubready details updated successfully for user {user_data['email']}"
@@ -253,6 +290,54 @@ def get_clubready_accounts(token):
     except Exception as e:
         logging.error(
             f"Error in GET api/stretchnote/settings/get-clubready-accounts: {str(e)}"
+        )
+        return jsonify({"error": str(e), "status": "error"}), 500
+
+
+@routes.route("/delete-clubready-account", methods=["POST"])
+@require_bearer_token
+def delete_clubready_account(token):
+    try:
+        user_data = decode_jwt_token(token)
+        data = request.get_json()
+        if not data.get("account_id"):
+            return (
+                jsonify({"message": "Account ID is required", "status": "error"}),
+                400,
+            )
+
+        check_user = (
+            supabase.table("users").select("*").eq("id", user_data["user_id"]).execute()
+        )
+        if not check_user.data:
+            return jsonify({"message": "User not found", "status": "error"}), 404
+
+        other_accounts = (
+            json.loads(check_user.data[0]["other_clubready_accounts"])
+            if check_user.data[0]["other_clubready_accounts"]
+            else None
+        )
+        if other_accounts:
+            for account in other_accounts:
+                if account["id"] == data["account_id"]:
+                    other_accounts.remove(account)
+                    break
+            other_accounts = json.dumps(other_accounts)
+            supabase.table("users").update(
+                {"other_clubready_accounts": other_accounts}
+            ).eq("id", user_data["user_id"]).execute()
+        return (
+            jsonify(
+                {
+                    "message": "Clubready account deleted successfully",
+                    "status": "success",
+                }
+            ),
+            200,
+        )
+    except Exception as e:
+        logging.error(
+            f"Error in POST api/stretchnote/settings/delete-clubready-account: {str(e)}"
         )
         return jsonify({"error": str(e), "status": "error"}), 500
 

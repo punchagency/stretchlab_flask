@@ -315,11 +315,14 @@ def get_bookings(token):
             if user.data[0]["other_clubready_accounts"]
             else None
         )
+
         if other_accounts:
             for account in other_accounts:
                 if account["active"] == True:
                     account_id = account["id"]
                     break
+
+        print(account_id, "account_id")
 
         check_today_booking = (
             supabase.table("clubready_bookings")
