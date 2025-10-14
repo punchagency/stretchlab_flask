@@ -46,7 +46,9 @@ def enable_two_factor_auth(token):
             )
 
         verification_code = generate_verification_code()
-        expiration_time = (datetime.now() + timedelta(minutes=5)).isoformat()
+        expiration_time = (datetime.now() + timedelta(minutes=5)).isoformat(
+            timespec="microseconds"
+        )
         supabase.table("users").update(
             {
                 "verification_code": verification_code,
@@ -168,7 +170,9 @@ def disable_two_factor_auth(token):
             return jsonify({"message": "2FA is not enabled", "status": "error"}), 400
 
         verification_code = generate_verification_code()
-        expiration_time = (datetime.now() + timedelta(minutes=5)).isoformat()
+        expiration_time = (datetime.now() + timedelta(minutes=5)).isoformat(
+            timespec="microseconds"
+        )
         supabase.table("users").update(
             {
                 "verification_code": verification_code,
@@ -330,7 +334,9 @@ def resend_verification_code(token):
             )
 
         verification_code = generate_verification_code()
-        expiration_time = (datetime.now() + timedelta(minutes=5)).isoformat()
+        expiration_time = (datetime.now() + timedelta(minutes=5)).isoformat(
+            timespec="microseconds"
+        )
 
         supabase.table("users").update(
             {
@@ -674,7 +680,9 @@ def change_email_initiate(token):
                 400,
             )
         verification_code = generate_verification_code()
-        expiration_time = (datetime.now() + timedelta(minutes=5)).isoformat()
+        expiration_time = (datetime.now() + timedelta(minutes=5)).isoformat(
+            timespec="microseconds"
+        )
         supabase.table("users").update(
             {
                 "verification_code": verification_code,

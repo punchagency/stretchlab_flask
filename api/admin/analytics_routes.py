@@ -271,16 +271,22 @@ def rpa_audit(token):
         # Hard coding for now would be better if i add it to the db
         if filter_metric in ["first", "all"]:
             opportunities = [
-                "Needs Analysis: Deep Emotional Reason(Why)",
-                "Needs Analysis: Physiscal Need",
+                "Confirmation Call",
+                "Grip Sock Notice",
+                "Arrive Early",
+                "Location",
+                "Prepaid",
+                "Keynote",
+                "Stated Goal",
+                "Emotional Why",
+                "Prior Solutions",
+                "Routine Captured",
+                "Physical/Medical Issue",
+                "Plan Recommendation",
                 "Problem Presented",
                 "Current Session Activity",
                 "Next Session Focus",
                 "Homework",
-                "Quality: No Future Bookings",
-                "Quality: Missing Homework",
-                "Quality: Missing Waiver",
-                "Quality: Other",
             ]
         else:
             opportunities = [
@@ -559,7 +565,6 @@ def get_rpa_audit_details(token):
                         "flexologist_name, location, first_timer, note_score, appointment_date, note_oppurtunities"
                     )
                     .eq("config_id", config_id)
-                    .eq("first_timer", "NO")
                     .neq("status", "No Show")
                     .gte("appointment_date", start_date)
                     .lt("appointment_date", end_date)
@@ -580,7 +585,6 @@ def get_rpa_audit_details(token):
                     )
                     .eq("config_id", config_id)
                     .eq("location", location)
-                    .eq("first_timer", "NO")
                     .neq("status", "No Show")
                     .gte("appointment_date", start_date)
                     .lt("appointment_date", end_date)
@@ -601,7 +605,6 @@ def get_rpa_audit_details(token):
                     )
                     .eq("config_id", config_id)
                     .eq("flexologist_name", flexologist_name)
-                    .eq("first_timer", "NO")
                     .neq("status", "No Show")
                     .gte("appointment_date", start_date)
                     .lt("appointment_date", end_date)
@@ -623,7 +626,6 @@ def get_rpa_audit_details(token):
                     .eq("config_id", config_id)
                     .eq("flexologist_name", flexologist_name)
                     .eq("location", location)
-                    .eq("first_timer", "NO")
                     .neq("status", "No Show")
                     .gte("appointment_date", start_date)
                     .lt("appointment_date", end_date)
@@ -1260,7 +1262,7 @@ def get_ranking_analytics(token):
                     int(booking["note_score"]) if booking["note_score"] != "N/A" else 0
                 )
                 percentage = round(
-                    (score / (18.0 if booking["first_timer"] == "YES" else 4.0)) * 100,
+                    (score / (16.0 if booking["first_timer"] == "YES" else 4.0)) * 100,
                     2,
                 )
                 group_key = (
@@ -1371,7 +1373,7 @@ def get_ranking_analytics(token):
                     int(booking["note_score"]) if booking["note_score"] != "N/A" else 0
                 )
                 percentage = round(
-                    (score / (18.0 if booking["first_timer"] == "YES" else 4.0)) * 100,
+                    (score / (16.0 if booking["first_timer"] == "YES" else 4.0)) * 100,
                     2,
                 )
                 group_key = (
@@ -1761,7 +1763,7 @@ def get_location_analytics(token):
                     int(booking["note_score"]) if booking["note_score"] != "N/A" else 0
                 )
                 percentage = round(
-                    (score / (18.0 if booking["first_timer"] == "YES" else 4.0)) * 100,
+                    (score / (16.0 if booking["first_timer"] == "YES" else 4.0)) * 100,
                     2,
                 )
 
@@ -1846,7 +1848,7 @@ def get_location_analytics(token):
                     int(booking["note_score"]) if booking["note_score"] != "N/A" else 0
                 )
                 percentage = round(
-                    (score / (18.0 if booking["first_timer"] == "YES" else 4.0)) * 100,
+                    (score / (16.0 if booking["first_timer"] == "YES" else 4.0)) * 100,
                     2,
                 )
 

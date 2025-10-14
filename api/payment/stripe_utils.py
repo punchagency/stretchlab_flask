@@ -59,7 +59,7 @@ def modify_customer_email(customer_id, email):
 
 def create_subscription(customer_id, price_id, quantity=1, coupon=None):
     try:
-        trial_end_dt = datetime.now() + relativedelta(days=3)
+        trial_end_dt = datetime.now() + relativedelta(days=14)
         trial_end = int(trial_end_dt.timestamp())
         end_of_month = (
             trial_end_dt.replace(day=1) + relativedelta(months=1, days=-1)
@@ -179,11 +179,21 @@ def update_subscription(subscription_id):
 
 def get_subscription_details(subscription_id):
     try:
-        subscription = stripe.Subscription.retrieve(subscription_id)
+        subscription = stripe.Subscription.retrieve(
+            subscription_id, expand=["discounts"]
+        )
         return subscription
     except Exception as e:
         print(e)
         return e
+
+
+def get_coupon_details(code_entered):
+    promo_codes = stripe.PromotionCode.list(code=code_entered, limit=1)
+    promo = None
+    if promo_codes.data:
+        promo = promo_codes.data[0]
+    return promo
 
 
 def cancel_subscription(subscription_id):

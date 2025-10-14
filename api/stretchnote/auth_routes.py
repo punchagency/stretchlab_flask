@@ -16,6 +16,7 @@ import os
 from datetime import datetime, timedelta
 from ..payment.stripe_utils import create_subscription, update_subscription
 from ..notification import insert_notification
+import json
 
 routes = Blueprint("stretchnote_auth", __name__)
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
@@ -174,6 +175,239 @@ def clubready_validate(token):
         return jsonify({"message": "Internal server error", "status": "error"}), 500
 
 
+# @routes.route("/login", methods=["POST"])
+# def login():
+#     try:
+#         data = request.get_json()
+
+#         user = (
+#             supabase.table("users")
+#             .select("*, roles(name)")
+#             .eq("email", data["email"].lower())
+#             .execute()
+#         )
+#         if len(user.data) == 0:
+#             return jsonify({"message": "User not found", "status": "error"}), 404
+#         requires_2fa = False
+#         is_verified = False
+#         role_name = (
+#             user.data[0]["roles"]["name"]
+#             if user.data and user.data[0]["roles"]
+#             else "Unknown"
+#         )
+#         get_business_details = (
+#             supabase.table("businesses")
+#             .select("*")
+#             .eq("admin_id", user.data[0]["admin_id"])
+#             .execute()
+#         )
+
+#         if user.data[0]["role_id"] in [1, 2, 4]:
+#             if verify_password(data["password"], user.data[0]["password"]):
+
+#                 if user.data[0]["two_factor_auth"]:
+#                     verification_code = generate_verification_code()
+#                     expiration_time = (
+#                         datetime.now() + timedelta(minutes=5)
+#                     ).isoformat()
+#                     supabase.table("users").update(
+#                         {
+#                             "verification_code": verification_code,
+#                             "verification_code_expires_at": expiration_time,
+#                         }
+#                     ).eq("id", user.data[0]["id"]).execute()
+#                     status = send_email(
+#                         "2FA Verification Code",
+#                         [user.data[0]["email"]],
+#                         None,
+#                         f"<html><body><p>Your 2FA verification code is {verification_code}. It will expire in 5 minutes.</p></body></html>",
+#                     )
+#                     requires_2fa = True
+
+#                 if user.data[0]["is_verified"] != True:
+#                     verification_code = generate_verification_code()
+#                     expiration_time = (
+#                         datetime.now() + timedelta(minutes=5)
+#                     ).isoformat()
+#                     supabase.table("users").update(
+#                         {
+#                             "verification_code": verification_code,
+#                             "verification_code_expires_at": expiration_time,
+#                         }
+#                     ).eq("id", user.data[0]["id"]).execute()
+#                     status = send_email(
+#                         "Verification Code",
+#                         [user.data[0]["email"]],
+#                         None,
+#                         f"<html><body><p>Your verification code is {verification_code}. It will expire in 5 minutes.</p></body></html>",
+#                     )
+#                 else:
+#                     is_verified = True
+
+#                 token = jwt.encode(
+#                     {
+#                         "user_id": user.data[0].get("id"),
+#                         "email": user.data[0]["email"],
+#                         "role_id": user.data[0]["role_id"],
+#                         "requires_2fa": requires_2fa,
+#                         "is_verified": is_verified,
+#                         "role_name": role_name,
+#                         "rpa_verified": get_business_details.data[0][
+#                             "robot_process_automation_active"
+#                         ],
+#                         "note_verified": get_business_details.data[0][
+#                             "note_taking_active"
+#                         ],
+#                         "username": user.data[0]["username"],
+#                     },
+#                     SECRET_KEY,
+#                     algorithm="HS256",
+#                 )
+#                 return (
+#                     jsonify(
+#                         {
+#                             "message": "Redirecting to admin dashboard...",
+#                             "token": token,
+#                         }
+#                     ),
+#                     403,
+#                 )
+#             else:
+#                 return (
+#                     jsonify({"message": "Invalid credentials", "status": "error"}),
+#                     400,
+#                 )
+
+#         check_admin_subscription_active = (
+#             supabase.table("businesses")
+#             .select("note_taking_active, note_taking_subscription_id")
+#             .eq("admin_id", user.data[0]["admin_id"])
+#             .execute()
+#         )
+#         get_admin = (
+#             supabase.table("users")
+#             .select("role_id")
+#             .eq("id", user.data[0]["admin_id"])
+#             .execute()
+#         )
+#         if (
+#             not check_admin_subscription_active.data[0]["note_taking_active"]
+#             and check_admin_subscription_active.data[0]["note_taking_subscription_id"]
+#             and get_admin.data[0]["role_id"] != 1
+#         ):
+#             return (
+#                 jsonify(
+#                     {
+#                         "message": "Admin subscription is not active, contact admin",
+#                         "status": "error",
+#                     }
+#                 ),
+#                 400,
+#             )
+#         if user.data[0]["status"] == 2:
+#             return (
+#                 jsonify(
+#                     {"message": "User is disabled, contact admin", "status": "error"}
+#                 ),
+#                 400,
+#             )
+
+#         if user.data[0]["password"] == "empty":
+#             return (
+#                 jsonify(
+#                     {
+#                         "message": "User is yet to verify email, please check your email or contact admin",
+#                         "status": "error",
+#                     }
+#                 ),
+#                 400,
+#             )
+
+#         if verify_password(data["password"], user.data[0]["password"]):
+
+#             token = jwt.encode(
+#                 {
+#                     "user_id": user.data[0].get("id"),
+#                     "email": user.data[0]["email"],
+#                     "role_id": user.data[0]["role_id"],
+#                     "role_name": "flexologist",
+#                     "username": user.data[0]["username"],
+#                     "status": user.data[0]["status"],
+#                 },
+#                 SECRET_KEY,
+#                 algorithm="HS256",
+#             )
+
+#             if user.data[0]["status"] == 3:
+#                 supabase.table("users").update({"status": 4}).eq(
+#                     "id", user.data[0]["id"]
+#                 ).execute()
+
+#                 insert_notification(
+#                     user.data[0]["admin_id"],
+#                     f"User with email {user.data[0]['email']} has joined your team but yet to verify clubready credentials",
+#                     "note taking",
+#                 )
+#             supabase.table("users").update(
+#                 {"last_login": datetime.now().isoformat()}
+#             ).eq("id", user.data[0]["id"]).execute()
+#             if user.data[0]["role_id"] == 8:
+#                 token = jwt.encode(
+#                     {
+#                         "user_id": user.data[0].get("id"),
+#                         "email": user.data[0]["email"],
+#                         "role_id": user.data[0]["role_id"],
+#                         "requires_2fa": requires_2fa,
+#                         "is_verified": True,
+#                         "role_name": role_name,
+#                         "is_stretchnote_verified": (
+#                             True if user.data[0]["status"] == 1 else False
+#                         ),
+#                         "status": user.data[0]["status"],
+#                         "rpa_verified": get_business_details.data[0][
+#                             "robot_process_automation_active"
+#                         ],
+#                         "note_verified": get_business_details.data[0][
+#                             "note_taking_active"
+#                         ],
+#                         "username": user.data[0]["username"],
+#                     },
+#                     SECRET_KEY,
+#                     algorithm="HS256",
+#                 )
+#             return (
+#                 jsonify(
+#                     {
+#                         "message": (
+#                             "Logged in successfully"
+#                             if user.data[0]["status"] == 1
+#                             else "Logged in successfully, activate your account"
+#                         ),
+#                         "status": "success",
+#                         "user": {
+#                             "id": user.data[0]["id"],
+#                             "email": user.data[0]["email"],
+#                             "username": user.data[0]["username"],
+#                             "role_id": user.data[0]["role_id"],
+#                             "is_verified": user.data[0]["is_verified"],
+#                             "status": user.data[0]["status"],
+#                         },
+#                         "token": token,
+#                     }
+#                 ),
+#                 200,
+#             )
+#         else:
+#             return (
+#                 jsonify({"message": "Invalid credentials", "status": "error"}),
+#                 400,
+#             )
+
+#     except Exception as e:
+#         logging.error(f"Error in POST /stretchnote/auth/login: {str(e)}")
+#         return jsonify({"message": "Internal server error", "status": "error"}), 500
+
+
 @routes.route("/login", methods=["POST"])
 def login():
     try:
@@ -206,9 +440,9 @@ def login():
 
                 if user.data[0]["two_factor_auth"]:
                     verification_code = generate_verification_code()
-                    expiration_time = (
-                        datetime.now() + timedelta(minutes=5)
-                    ).isoformat()
+                    expiration_time = (datetime.now() + timedelta(minutes=5)).isoformat(
+                        timespec="microseconds"
+                    )
                     supabase.table("users").update(
                         {
                             "verification_code": verification_code,
@@ -225,9 +459,9 @@ def login():
 
                 if user.data[0]["is_verified"] != True:
                     verification_code = generate_verification_code()
-                    expiration_time = (
-                        datetime.now() + timedelta(minutes=5)
-                    ).isoformat()
+                    expiration_time = (datetime.now() + timedelta(minutes=5)).isoformat(
+                        timespec="microseconds"
+                    )
                     supabase.table("users").update(
                         {
                             "verification_code": verification_code,
@@ -323,6 +557,33 @@ def login():
             )
 
         if verify_password(data["password"], user.data[0]["password"]):
+            other_accounts = (
+                json.loads(user.data[0]["other_clubready_accounts"])
+                if user.data[0]["other_clubready_accounts"]
+                else None
+            )
+            if other_accounts:
+                my_accounts = [
+                    {
+                        "id": account["id"],
+                        "name": account["full_name"],
+                        "active": account["active"],
+                    }
+                    for account in other_accounts
+                ]
+                my_accounts.append(
+                    {"id": None, "name": user.data[0]["full_name"], "active": True}
+                )
+            else:
+                my_accounts = [
+                    {
+                        "id": None,
+                        "name": user.data[0]["full_name"],
+                        "active": True,
+                    }
+                ]
+
+            print(my_accounts, "my_accounts")
 
             token = jwt.encode(
                 {
@@ -332,6 +593,7 @@ def login():
                     "role_name": "flexologist",
                     "username": user.data[0]["username"],
                     "status": user.data[0]["status"],
+                    "clubready_accounts": my_accounts,
                 },
                 SECRET_KEY,
                 algorithm="HS256",
@@ -350,6 +612,7 @@ def login():
             supabase.table("users").update(
                 {"last_login": datetime.now().isoformat()}
             ).eq("id", user.data[0]["id"]).execute()
+
             if user.data[0]["role_id"] == 8:
                 token = jwt.encode(
                     {
@@ -370,6 +633,7 @@ def login():
                             "note_taking_active"
                         ],
                         "username": user.data[0]["username"],
+                        "clubready_accounts": my_accounts,
                     },
                     SECRET_KEY,
                     algorithm="HS256",

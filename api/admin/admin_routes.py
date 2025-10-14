@@ -190,13 +190,14 @@ def invite_user(token):
             supabase.table("users")
             .select("*, roles(name)")
             .eq("id", user_data["user_id"])
+            .eq("username", user_data["username"])
             .in_("role_id", [1, 2, 4, 8])
             .execute()
         )
         check_if_a_user_already_invited = (
             supabase.table("users")
             .select("*")
-            .eq("admin_id", user_data["user_id"])
+            .eq("username", user_data["username"])
             .eq("role_id", 3)
             .execute()
         )
@@ -205,6 +206,42 @@ def invite_user(token):
                 jsonify({"message": "User is not an admin", "status": "error"}),
                 401,
             )
+        king_army = False
+        if check_user_exists_and_is_admin.data[0]["role_id"] in [4, 8]:
+            get_permission = (
+                supabase.table("permissions")
+                .select("id")
+                .eq("permission_tag", "invite_flex")
+                .execute()
+            )
+            perm_id = get_permission.data[0]["id"]
+
+            check_if_permission_exist = (
+                supabase.table("user_permissions")
+                .select("*")
+                .eq("user_id", check_user_exists_and_is_admin.data[0]["id"])
+                .eq("permission_id", perm_id)
+                .execute()
+            )
+            if not check_if_permission_exist.data:
+                return (
+                    jsonify(
+                        {
+                            "message": "You do not have permission to invite users",
+                            "status": "error",
+                        }
+                    ),
+                    400,
+                )
+            get_owner_role_id = (
+                supabase.table("users")
+                .select("role_id")
+                .eq("id", check_user_exists_and_is_admin.data[0]["admin_id"])
+                .execute()
+            )
+            if get_owner_role_id.data[0]["role_id"] == 1:
+                king_army = True
+
         check_subscription = (
             supabase.table("businesses")
             .select("payment_id,note_taking_subscription_id")
@@ -214,6 +251,7 @@ def invite_user(token):
         if (
             not check_subscription.data[0]["payment_id"]
             and check_user_exists_and_is_admin.data[0]["role_id"] != 1
+            and not king_army
         ):
             return (
                 jsonify(
@@ -231,20 +269,27 @@ def invite_user(token):
             not check_subscription.data[0]["note_taking_subscription_id"]
             and not data["proceed"]
             and check_user_exists_and_is_admin.data[0]["role_id"] != 1
+            and not king_army
             and not check_if_a_user_already_invited.data
         ):
             payment_method = retrieve_payment_method(
                 check_subscription.data[0]["payment_id"]
             )
-            paymentinfo = {
-                "brand": payment_method.card.brand,
-                "last4": payment_method.card.last4,
-                "exp_month": payment_method.card.exp_month,
-                "exp_year": payment_method.card.exp_year,
-                "country": payment_method.card.country,
-                "name": payment_method.billing_details.name,
-                "email": payment_method.billing_details.email,
-            }
+            paymentinfo = None
+
+            if payment_method["type"] == "card":
+                paymentinfo = {
+                    "type": payment_method["type"],
+                    "brand": payment_method.card.brand,
+                    "last4": payment_method.card.last4,
+                    "exp_month": payment_method.card.exp_month,
+                    "exp_year": payment_method.card.exp_year,
+                    "country": payment_method.card.country,
+                    "name": payment_method.billing_details.name,
+                    "email": payment_method.billing_details.email,
+                }
+            else:
+                paymentinfo = {"type": payment_method["type"]}
             return (
                 jsonify(
                     {
@@ -257,7 +302,6 @@ def invite_user(token):
                 402,
             )
         email = data.get("email").lower()
-        # password, hashed_password = generate_random_password()
 
         check_user_non_flexologist = (
             supabase.table("users")
@@ -414,16 +458,122 @@ def bulk_invite_users(token):
             supabase.table("users")
             .select("*")
             .eq("id", user_data["user_id"])
+            .eq("username", user_data["username"])
             .in_("role_id", [1, 2, 4, 8])
             .execute()
         )
         if not get_user_details.data:
             return jsonify({"message": "User is not an admin", "status": "error"}), 401
+
+        check_if_a_user_already_invited = (
+            supabase.table("users")
+            .select("*")
+            .eq("username", user_data["username"])
+            .eq("role_id", 3)
+            .execute()
+        )
+
+        king_army = False
+
+        if get_user_details.data[0]["role_id"] in [4, 8]:
+            get_permission = (
+                supabase.table("permissions")
+                .select("id")
+                .eq("permission_tag", "invite_flex")
+                .execute()
+            )
+            perm_id = get_permission.data[0]["id"]
+
+            check_if_permission_exist = (
+                supabase.table("user_permissions")
+                .select("*")
+                .eq("user_id", get_user_details.data[0]["id"])
+                .eq("permission_id", perm_id)
+                .execute()
+            )
+            if not check_if_permission_exist.data:
+                return (
+                    jsonify(
+                        {
+                            "message": "You do not have permission to invite users",
+                            "status": "error",
+                        }
+                    ),
+                    400,
+                )
+            get_owner_role_id = (
+                supabase.table("users")
+                .select("role_id")
+                .eq("id", get_user_details.data[0]["admin_id"])
+                .execute()
+            )
+            if get_owner_role_id.data[0]["role_id"] == 1:
+                king_army = True
+
+        check_subscription = (
+            supabase.table("businesses")
+            .select("payment_id,note_taking_subscription_id")
+            .eq("username", get_user_details.data[0]["username"])
+            .execute()
+        )
+        if (
+            not check_subscription.data[0]["payment_id"]
+            and get_user_details.data[0]["role_id"] != 1
+            and not king_army
+        ):
+            return (
+                jsonify(
+                    {
+                        "message": "payment details needed",
+                        "payment_id": False,
+                        "status": "warning",
+                    }
+                ),
+                402,
+            )
+
+        if (
+            not check_subscription.data[0]["note_taking_subscription_id"]
+            and get_user_details.data[0]["role_id"] != 1
+            and not king_army
+            and not check_if_a_user_already_invited.data
+        ):
+            payment_method = retrieve_payment_method(
+                check_subscription.data[0]["payment_id"]
+            )
+            paymentinfo = None
+
+            if payment_method["type"] == "card":
+                paymentinfo = {
+                    "type": payment_method["type"],
+                    "brand": payment_method.card.brand,
+                    "last4": payment_method.card.last4,
+                    "exp_month": payment_method.card.exp_month,
+                    "exp_year": payment_method.card.exp_year,
+                    "country": payment_method.card.country,
+                    "name": payment_method.billing_details.name,
+                    "email": payment_method.billing_details.email,
+                }
+            else:
+                paymentinfo = {"type": payment_method["type"]}
+            return (
+                jsonify(
+                    {
+                        "message": "note taking subscription needed",
+                        "payment_id": True,
+                        "payment_info": paymentinfo,
+                        "status": "warning",
+                    }
+                ),
+                402,
+            )
+
         emails = data.get("emails")
         resend = data.get("resend", False)
         if not emails:
             return jsonify({"message": "Emails are required", "status": "error"}), 400
 
+        # Start background processing
         thread = threading.Thread(
             target=background_bulk_invite_users,
             args=(
@@ -763,6 +913,7 @@ def save_robot_config(token):
                         "status"
                     ],
                     "robot_process_automation_active": True,
+                    "rpa_verified": True,
                 }
             ).eq("admin_id", user_data["user_id"]).execute()
             supabase.table("users").update(
@@ -1018,6 +1169,24 @@ def change_status_robot(token):
                 401,
             )
         data = request.get_json()
+        check_robot_status_admin = (
+            supabase.table("businesses")
+            .select("robot_process_automation_active")
+            .eq("admin_id", user_data["user_id"])
+        ).execute()
+
+        print(check_robot_status_admin)
+
+        if not check_robot_status_admin.data[0]["robot_process_automation_active"]:
+            return (
+                jsonify(
+                    {
+                        "message": "Subscription cancelled, restart subscription to enable",
+                        "status": "error",
+                    }
+                ),
+                404,
+            )
         rule_arn = update_user_rule_schedule(
             username=check_user_exists_and_is_admin.data[0]["username"],
             state=data["status"],

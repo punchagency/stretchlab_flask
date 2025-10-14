@@ -3,6 +3,8 @@ from ..utils.utils import (
     get_user_bookings_from_clubready,
     decode_jwt_token,
     submit_notes,
+    submit_after_log_off,
+    log_off_booking,
 )
 from ..database.database import (
     save_notes,
@@ -74,20 +76,42 @@ def background_submit_notes(
         return datetime.now(tz)
 
     try:
-        supabase.table("clubready_bookings").update(
-            {
-                "task_status": "submitting",
-                "task_message": "Notes submission running",
-                "task_id": task_id,
-                "submitted_notes": notes,
-                "coaching_notes": coaching,
-            }
-        ).eq("client_name", client_name).eq("period", period).eq(
-            "created_at", client_date
-        ).execute()
-        result = submit_notes(
-            clubready_username, clubready_password, period, notes, location, client_name
+        updated_data = (
+            supabase.table("clubready_bookings")
+            .update(
+                {
+                    "task_status": "submitting",
+                    "task_message": "Notes submission running",
+                    "task_id": task_id,
+                    "submitted_notes": notes,
+                    "coaching_notes": coaching,
+                }
+            )
+            .eq("client_name", client_name)
+            .eq("period", period)
+            .eq("created_at", client_date)
+            .execute()
         )
+        result = None
+        check_logged_off = updated_data.data[0]["logged_off"]
+        if check_logged_off:
+            result = submit_after_log_off(
+                clubready_username,
+                clubready_password,
+                period,
+                notes,
+                location,
+                client_name,
+            )
+        else:
+            result = submit_notes(
+                clubready_username,
+                clubready_password,
+                period,
+                notes,
+                location,
+                client_name,
+            )
 
         if result["status"]:
             supabase.table("clubready_bookings").update(
@@ -141,12 +165,104 @@ def background_submit_notes(
         logging.error(f"Background task {task_id} failed: {str(e)}")
         supabase.table("clubready_bookings").update(
             {
+                "submitted": False,
+                "submitted_at": None,
                 "task_status": "error",
                 "task_message": "Submission failed",
                 "task_id": task_id,
                 "task_error": str(e),
             }
-        ).eq("client_name", client_name).eq("created_at", client_date).execute()
+        ).eq("client_name", client_name).eq("period", period).eq(
+            "created_at", client_date
+        ).execute()
+
+
+def background_log_off_booking(
+    task_id,
+    clubready_username,
+    clubready_password,
+    period,
+    location,
+    client_name,
+    client_date,
+    client_tz,
+):
+    def local_get_client_datetime():
+        tz = pytz.timezone(client_tz)
+        return datetime.now(tz)
+
+    try:
+        supabase.table("clubready_bookings").update(
+            {
+                "log_off_task_status": "logging off",
+                "log_off_task_message": "Session logging off..",
+                "log_off_task_id": task_id,
+            }
+        ).eq("client_name", client_name).eq("period", period).eq(
+            "created_at", client_date
+        ).execute()
+        result = log_off_booking(
+            clubready_username, clubready_password, period, location, client_name
+        )
+
+        if result["status"]:
+            supabase.table("clubready_bookings").update(
+                {
+                    "logged_off": True,
+                    "logged_off_at": local_get_client_datetime().strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    ),
+                    "log_off_task_status": "success",
+                    "log_off_task_message": result["message"],
+                    "log_off_task_id": task_id,
+                    "log_off_task_error": None,
+                }
+            ).eq("client_name", client_name).eq("period", period).eq(
+                "created_at", client_date
+            ).execute()
+            if result["same_client_period"]:
+                supabase.table("clubready_bookings").update(
+                    {
+                        "logged_off": True,
+                        "logged_off_at": local_get_client_datetime().strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        ),
+                        "log_off_task_status": "success",
+                        "log_off_task_message": result["message"],
+                        "log_off_task_id": task_id,
+                        "log_off_task_error": None,
+                    }
+                ).eq("client_name", client_name).eq(
+                    "period", result["same_client_period"]
+                ).eq(
+                    "created_at", client_date
+                ).execute()
+        else:
+            supabase.table("clubready_bookings").update(
+                {
+                    "log_off_task_status": "error",
+                    "log_off_task_message": "log off failed",
+                    "log_off_task_id": task_id,
+                    "logged_off": False,
+                    "log_off_task_error": "No matching booking found",
+                }
+            ).eq("client_name", client_name).eq("period", period).eq(
+                "created_at", client_date
+            ).execute()
+    except Exception as e:
+        logging.error(f"Background task {task_id} failed: {str(e)}")
+        supabase.table("clubready_bookings").update(
+            {
+                "logged_off": False,
+                "logged_off_at": None,
+                "log_off_task_status": "error",
+                "log_off_task_message": "log off failed",
+                "log_off_task_id": task_id,
+                "log_off_task_error": str(e),
+            }
+        ).eq("client_name", client_name).eq("period", period).eq(
+            "created_at", client_date
+        ).execute()
 
 
 # @routes.route("/get_bookings", methods=["GET"])
@@ -277,6 +393,212 @@ def background_submit_notes(
 #         return jsonify({"error": "Internal server error", "status": "error"}), 500
 
 
+# @routes.route("/get_bookings", methods=["GET"])
+# @require_bearer_token
+# def get_bookings(token):
+#     try:
+#         reset = request.args.get("reset")
+#         user_data = decode_jwt_token(token)
+#         if user_data["role_id"] not in [3, 8]:
+#             return (
+#                 jsonify({"message": "Unauthorized", "status": "error"}),
+#                 401,
+#             )
+
+#         client_datetime = get_client_datetime()
+#         client_date = client_datetime.strftime("%Y-%m-%d")
+#         user = (
+#             supabase.table("users").select("*").eq("id", user_data["user_id"]).execute()
+#         )
+#         if not user.data:
+#             return jsonify({"message": "User not found", "status": "error"}), 404
+#         if (
+#             user.data[0]["clubready_username"] is None
+#             or user.data[0]["clubready_password"] is None
+#         ):
+#             return (
+#                 jsonify(
+#                     {
+#                         "message": "Please update your clubready credentials",
+#                         "status": "warning",
+#                     }
+#                 ),
+#                 400,
+#             )
+#         account_id = user.data[0]["clubready_user_id"]
+#         other_accounts = (
+#             json.loads(user.data[0]["other_clubready_accounts"])
+#             if user.data[0]["other_clubready_accounts"]
+#             else None
+#         )
+#         if other_accounts:
+#             for account in other_accounts:
+#                 if account["active"] == True:
+#                     account_id = account["id"]
+#                     break
+
+#         check_today_booking = (
+#             supabase.table("clubready_bookings")
+#             .select("*")
+#             .eq("user_id", user_data["user_id"])
+#             .eq("created_at", client_date)
+#             .eq("account_id", account_id)
+#             .execute()
+#         )
+#         if len(check_today_booking.data) > 0 and reset != "true":
+#             bookings = check_today_booking.data
+#         else:
+#             user_details = None
+#             if other_accounts:
+#                 for account in other_accounts:
+#                     if account["active"] == True:
+#                         user_details = {
+#                             "Username": account["username"],
+#                             "Password": account["password"],
+#                         }
+#                         break
+
+#                 if not user_details:
+#                     user_details = {
+#                         "Username": user.data[0]["clubready_username"],
+#                         "Password": user.data[0]["clubready_password"],
+#                     }
+#             else:
+#                 user_details = {
+#                     "Username": user.data[0]["clubready_username"],
+#                     "Password": user.data[0]["clubready_password"],
+#                 }
+
+#             print(user_details, "user_details")
+
+#             bookings = asyncio.run(get_user_bookings_from_clubready(user_details))
+#             if bookings["status"]:
+#                 check_today_booking = (
+#                     supabase.table("clubready_bookings")
+#                     .select("*")
+#                     .eq("user_id", user_data["user_id"])
+#                     .eq("created_at", client_date)
+#                     .eq("account_id", account_id)
+#                     .execute()
+#                 )
+#                 if len(check_today_booking.data) > 0:
+#                     for booking in check_today_booking.data:
+#                         if booking["submitted_notes"] is None:
+#                             supabase.table("clubready_bookings").delete().eq(
+#                                 "id", booking["id"]
+#                             ).execute()
+
+#                 existing_submitted_bookings = set()
+#                 for today_booking in check_today_booking.data:
+#                     if today_booking["submitted_notes"] is not None:
+#                         existing_submitted_bookings.add(today_booking["booking_id"])
+
+#                 def parse_time(t):
+#                     return datetime.strptime(t, "%I:%M %p").time()
+
+#                 bookings["bookings"].sort(key=lambda b: parse_time(b["booking_time"]))
+
+#                 for booking in bookings["bookings"]:
+#                     if booking["booking_id"] not in existing_submitted_bookings:
+#                         supabase.table("clubready_bookings").insert(
+#                             {
+#                                 "user_id": user_data["user_id"],
+#                                 "client_name": booking["client_name"].lower(),
+#                                 "booking_id": booking["booking_id"],
+#                                 "workout_type": booking["workout_type"],
+#                                 "first_timer": booking["first_timer"],
+#                                 "active_member": booking["active"],
+#                                 "location": booking["location"].lower(),
+#                                 "phone_number": booking["phone"],
+#                                 "booking_time": booking["booking_time"],
+#                                 "period": booking["event_date"],
+#                                 "past_booking": booking["past"],
+#                                 "flexologist_name": booking["flexologist_name"].lower(),
+#                                 "submitted": False,
+#                                 "submitted_notes": None,
+#                                 "created_at": client_date,
+#                                 "account_id": account_id,
+#                             }
+#                         ).execute()
+
+#                 check_bookings = (
+#                     supabase.table("clubready_bookings")
+#                     .select("*")
+#                     .eq("user_id", user_data["user_id"])
+#                     .eq("created_at", client_date)
+#                     .eq("account_id", account_id)
+#                     .order("id")
+#                     .execute()
+#                 )
+#                 bookings = check_bookings.data
+#             else:
+#                 return (
+#                     jsonify(
+#                         {
+#                             "message": "incorrect username or password",
+#                             "status": "warning",
+#                         }
+#                     ),
+#                     400,
+#                 )
+
+#         response = {
+#             "message": f"Bookings fetched successfully",
+#             "status": "success",
+#             "bookings": bookings,
+#         }
+#         return jsonify(response), 200
+
+#     except Exception as e:
+#         logging.error(f"Error in GET /api/resource: {str(e)}")
+#         return jsonify({"error": "Internal server error", "status": "error"}), 500
+
+
+# @routes.route("/switch-account", methods=["GET"])
+# @require_bearer_token
+# def switch_account(token):
+#     try:
+#         account_id = request.args.get("account_id", None)
+#         user_data = decode_jwt_token(token)
+#         check_user = (
+#             supabase.table("users").select("*").eq("id", user_data["user_id"]).execute()
+#         )
+#         if not check_user.data:
+#             return jsonify({"message": "User not found", "status": "error"}), 404
+#         other_accounts = (
+#             json.loads(check_user.data[0]["other_clubready_accounts"])
+#             if check_user.data[0]["other_clubready_accounts"]
+#             else None
+#         )
+#         if other_accounts:
+#             if account_id:
+#                 for account in other_accounts:
+#                     if account["id"] == account_id:
+#                         account["active"] = True
+#                     else:
+#                         account["active"] = False
+#                 other_accounts = json.dumps(other_accounts)
+#                 supabase.table("users").update(
+#                     {"other_clubready_accounts": other_accounts}
+#                 ).eq("id", user_data["user_id"]).execute()
+#             else:
+#                 for account in other_accounts:
+#                     account["active"] = False
+#                 other_accounts = json.dumps(other_accounts)
+#                 supabase.table("users").update(
+#                     {"other_clubready_accounts": other_accounts}
+#                 ).eq("id", user_data["user_id"]).execute()
+#         else:
+#             return jsonify({"message": "No accounts found", "status": "error"}), 404
+#         return (
+#             jsonify({"message": "Account switched successfully", "status": "success"}),
+#             200,
+#         )
+#     except Exception as e:
+#         logging.error(f"Error in POST /api/resource: {str(e)}")
+#         return jsonify({"error": "Internal server error", "status": "error"}), 500
+
+
 @routes.route("/get_bookings", methods=["GET"])
 @require_bearer_token
 def get_bookings(token):
@@ -315,11 +637,14 @@ def get_bookings(token):
             if user.data[0]["other_clubready_accounts"]
             else None
         )
+
         if other_accounts:
             for account in other_accounts:
                 if account["active"] == True:
                     account_id = account["id"]
                     break
+
+        print(account_id, "account_id")
 
         check_today_booking = (
             supabase.table("clubready_bookings")
@@ -367,14 +692,20 @@ def get_bookings(token):
                 )
                 if len(check_today_booking.data) > 0:
                     for booking in check_today_booking.data:
-                        if booking["submitted_notes"] is None:
+                        if (
+                            booking["submitted_notes"] is None
+                            and booking["log_off_task_id"] is None
+                        ):
                             supabase.table("clubready_bookings").delete().eq(
                                 "id", booking["id"]
                             ).execute()
 
                 existing_submitted_bookings = set()
                 for today_booking in check_today_booking.data:
-                    if today_booking["submitted_notes"] is not None:
+                    if (
+                        today_booking["submitted_notes"] is not None
+                        or today_booking["log_off_task_id"] is not None
+                    ):
                         existing_submitted_bookings.add(today_booking["booking_id"])
 
                 def parse_time(t):
@@ -616,13 +947,29 @@ def get_ai_logic(token):
                 401,
             )
         user_id = user_data["user_id"]
-        flexologist_name = (
-            supabase.table("users")
-            .select("*")
-            .eq("id", user_id)
-            .execute()
-            .data[0]["full_name"]
+        get_flexologist_data = (
+            supabase.table("users").select("*").eq("id", user_id).execute()
         )
+        if not get_flexologist_data.data:
+            return (
+                jsonify({"message": "User not found", "status": "error"}),
+                404,
+            )
+
+        check_accounts = get_flexologist_data.data[0]["other_clubready_accounts"]
+
+        flexologist_name = get_flexologist_data.data[0]["full_name"]
+
+        print(check_accounts, "check account")
+        print(flexologist_name, "flex name")
+
+        if check_accounts:
+            for account in json.loads(check_accounts):
+                if account["active"]:
+                    flexologist_name = account["full_name"]
+                    break
+
+        print(flexologist_name, "flex name again")
         flexologist_name = flexologist_name.lower()
 
         current_date = datetime.now()
@@ -638,11 +985,22 @@ def get_ai_logic(token):
             .select("*")
             .eq("flexologist_name", flexologist_name)
             .eq("first_timer", "NO")
-            .gte("created_at", start_date)
-            .lt("created_at", end_date)
+            .gte("appointment_date", start_date)
+            .lt("appointment_date", end_date)
             .execute()
             .data
         )
+        if not rpa_notes:
+            return (
+                jsonify(
+                    {
+                        "average_quality_notes_percentage": 0,
+                        "top_opportunities": [],
+                        "status": "success",
+                    }
+                ),
+                200,
+            )
 
         total_quality_notes_percentage_array = []
 
@@ -799,6 +1157,67 @@ def get_questions(token, booking_id):
         return jsonify({"error": "Internal server error", "status": "error"}), 500
 
 
+# @routes.route("/submit_notes", methods=["POST"])
+# @require_bearer_token
+# def submit_notes_route(token):
+#     try:
+#         user_data = decode_jwt_token(token)
+#         if user_data["role_id"] not in [3, 8]:
+#             return (
+#                 jsonify({"message": "Unauthorized", "status": "error"}),
+#                 401,
+#             )
+#         data = request.get_json()
+#         period = data["period"]
+#         notes = data["notes"]
+#         coaching = data["coaching"]
+#         client_name = data["client_name"]
+#         location = data["location"]
+#         client_tz = get_client_timezone()
+#         client_datetime = get_client_datetime()
+#         client_date = client_datetime.strftime("%Y-%m-%d")
+
+#         user_details = (
+#             supabase.table("users").select("*").eq("id", user_data["user_id"]).execute()
+#         )
+#         if not user_details.data:
+#             return jsonify({"error": "User not found", "status": "error"}), 404
+
+#         task_id = str(uuid.uuid4())
+
+#         thread = threading.Thread(
+#             target=background_submit_notes,
+#             args=(
+#                 task_id,
+#                 user_details.data[0]["clubready_username"],
+#                 user_details.data[0]["clubready_password"],
+#                 period,
+#                 notes,
+#                 location,
+#                 client_name,
+#                 coaching,
+#                 client_date,
+#                 client_tz,
+#             ),
+#         )
+#         thread.start()
+
+#         return (
+#             jsonify(
+#                 {
+#                     "message": "Notes submitted successfully",
+#                     "status": "success",
+#                     "task_id": task_id,
+#                 }
+#             ),
+#             202,
+#         )
+
+#     except Exception as e:
+#         logging.error(f"Error in POST /submit_notes: {str(e)}")
+#         return jsonify({"error": "Internal server error", "status": "error"}), 500
+
+
 @routes.route("/submit_notes", methods=["POST"])
 @require_bearer_token
 def submit_notes_route(token):
@@ -819,11 +1238,58 @@ def submit_notes_route(token):
         client_datetime = get_client_datetime()
         client_date = client_datetime.strftime("%Y-%m-%d")
 
+        if not notes or notes.strip() == "":
+            return jsonify({"error": "Notes are required", "status": "error"}), 400
+
         user_details = (
             supabase.table("users").select("*").eq("id", user_data["user_id"]).execute()
         )
+
         if not user_details.data:
             return jsonify({"error": "User not found", "status": "error"}), 404
+
+        check_if_submitted_prior = (
+            supabase.table("clubready_bookings")
+            .select("submitted")
+            .eq("period", period)
+            .eq("client_name", client_name)
+            .eq("user_id", user_data["user_id"])
+            .eq("created_at", client_date)
+            .execute()
+        )
+
+        if check_if_submitted_prior.data[0]["submitted"]:
+            return (
+                jsonify(
+                    {
+                        "message": "This booking already has a submission",
+                        "status": "warning",
+                    }
+                ),
+                403,
+            )
+
+        other_accounts = (
+            json.loads(user_details.data[0]["other_clubready_accounts"])
+            if user_details.data[0]["other_clubready_accounts"]
+            else None
+        )
+
+        username = None
+        password = None
+
+        if not other_accounts:
+            username = user_details.data[0]["clubready_username"]
+            password = user_details.data[0]["clubready_password"]
+        else:
+            for account in other_accounts:
+                if account["active"] == True:
+                    username = account["username"]
+                    password = account["password"]
+                    break
+
+        if not username or not password:
+            return jsonify({"error": "No account found", "status": "error"}), 404
 
         task_id = str(uuid.uuid4())
 
@@ -831,8 +1297,8 @@ def submit_notes_route(token):
             target=background_submit_notes,
             args=(
                 task_id,
-                user_details.data[0]["clubready_username"],
-                user_details.data[0]["clubready_password"],
+                username,
+                password,
                 period,
                 notes,
                 location,
@@ -847,7 +1313,107 @@ def submit_notes_route(token):
         return (
             jsonify(
                 {
-                    "message": "Notes submitted successfully",
+                    "message": "Notes submission in progress",
+                    "status": "success",
+                    "task_id": task_id,
+                }
+            ),
+            202,
+        )
+
+    except Exception as e:
+        logging.error(f"Error in POST /submit_notes: {str(e)}")
+        return jsonify({"error": "Internal server error", "status": "error"}), 500
+
+
+@routes.route("/log-off-booking", methods=["POST"])
+@require_bearer_token
+def log_off_booking_route(token):
+    try:
+        user_data = decode_jwt_token(token)
+        if user_data["role_id"] not in [3, 8]:
+            return (
+                jsonify({"message": "Unauthorized", "status": "error"}),
+                401,
+            )
+        data = request.get_json()
+        period = data["period"]
+        client_name = data["client_name"]
+        location = data["location"]
+        client_tz = get_client_timezone()
+        client_datetime = get_client_datetime()
+        client_date = client_datetime.strftime("%Y-%m-%d")
+
+        user_details = (
+            supabase.table("users").select("*").eq("id", user_data["user_id"]).execute()
+        )
+        if not user_details.data:
+            return jsonify({"error": "User not found", "status": "error"}), 404
+
+        check_if_logged_prior = (
+            supabase.table("clubready_bookings")
+            .select("logged_off")
+            .eq("period", period)
+            .eq("client_name", client_name)
+            .eq("user_id", user_data["user_id"])
+            .eq("created_at", client_date)
+            .execute()
+        )
+
+        if check_if_logged_prior.data[0]["logged_off"]:
+            return (
+                jsonify(
+                    {
+                        "message": "This booking has been logged off prior",
+                        "status": "warning",
+                    }
+                ),
+                403,
+            )
+
+        other_accounts = (
+            json.loads(user_details.data[0]["other_clubready_accounts"])
+            if user_details.data[0]["other_clubready_accounts"]
+            else None
+        )
+
+        username = None
+        password = None
+
+        if not other_accounts:
+            username = user_details.data[0]["clubready_username"]
+            password = user_details.data[0]["clubready_password"]
+        else:
+            for account in other_accounts:
+                if account["active"] == True:
+                    username = account["username"]
+                    password = account["password"]
+                    break
+
+        if not username or not password:
+            return jsonify({"error": "No account found", "status": "error"}), 404
+
+        task_id = str(uuid.uuid4())
+
+        thread = threading.Thread(
+            target=background_log_off_booking,
+            args=(
+                task_id,
+                username,
+                password,
+                period,
+                location,
+                client_name,
+                client_date,
+                client_tz,
+            ),
+        )
+        thread.start()
+
+        return (
+            jsonify(
+                {
+                    "message": "Session logging off..",
                     "status": "success",
                     "task_id": task_id,
                 }

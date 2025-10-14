@@ -9,6 +9,7 @@ from ..payment.stripe_utils import (
     get_subscription_details,
     cancel_subscription,
     restart_subscription,
+    get_coupon_details,
 )
 import logging
 from ..notification import insert_notification
@@ -54,6 +55,37 @@ def create_setup_intent_route(token):
         )
     except Exception as e:
         logging.error(f"Error in POST api/admin/payment/create-setup-intent: {str(e)}")
+        return jsonify({"error": str(e), "status": "error"}), 500
+
+
+@routes.route("/check-coupon", methods=["POST"])
+def check_coupon():
+    try:
+        data = request.get_json()
+        promo_code = data.get("coupon", None)
+        if not promo_code:
+            return jsonify({"message": "Promo code needed", "status": "error"}), 400
+        details = get_coupon_details(promo_code)
+
+        data_to_send = None
+        if details:
+            check_if_coupon_on_db = (
+                supabase.table("coupons")
+                .select("*")
+                .eq("coupon_code", details["code"])
+                .execute()
+            )
+            if check_if_coupon_on_db.data:
+                data_to_send = {
+                    "active": details["active"],
+                    "duration": details["coupon"]["duration_in_months"],
+                    "percent_off": details["coupon"]["percent_off"],
+                    "valid": details["coupon"]["valid"],
+                }
+        return jsonify({"message": "coupon details", "data": data_to_send}), 200
+
+    except Exception as e:
+        logging.error(f"Error in POST api/admin/payment/check-coupon: {str(e)}")
         return jsonify({"error": str(e), "status": "error"}), 500
 
 
@@ -201,6 +233,17 @@ def get_subscriptions_details(token):
             robot_process_automation_sub_details = get_subscription_details(
                 robot_process_automation_sub
             )
+            discount = False
+            discount_info = None
+            check_discount = robot_process_automation_sub_details["discounts"]
+            if len(check_discount) > 0:
+                discount = True
+                discount_info = {
+                    "percent_off": check_discount[0]["coupon"]["percent_off"],
+                    "amount_off": check_discount[0]["coupon"]["amount_off"],
+                    "end_date": check_discount[0]["end"],
+                }
+
             data_to_send = {
                 "price": robot_process_automation_sub_details["items"]["data"][0][
                     "price"
@@ -219,6 +262,8 @@ def get_subscriptions_details(token):
                 "end_date": robot_process_automation_sub_details["items"]["data"][0][
                     "current_period_end"
                 ],
+                "discount": discount,
+                "discount_info": discount_info,
             }
 
             suscription_details.append(

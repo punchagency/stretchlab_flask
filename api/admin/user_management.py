@@ -18,7 +18,7 @@ routes = Blueprint("user_management", __name__)
 def get_managers_users(token):
     try:
         user_data = decode_jwt_token(token)
-        if user_data["role_id"] == 3:
+        if user_data["role_id"] in [3, 4, 8]:
             return (
                 jsonify(
                     {
@@ -30,14 +30,34 @@ def get_managers_users(token):
             )
         managers = (
             supabase.table("users")
-            .select("id, full_name, status, email, invited_at,created_at")
+            .select(
+                "id, full_name, status, email, invited_at,created_at, user_permissions(permissions(permission_name, permission_tag))"
+            )
             .in_("role_id", [4, 8])
             .eq("admin_id", user_data["user_id"])
             .execute()
             .data
         )
+        for manager in managers:
+            manager["permissions"] = [
+                p["permissions"]
+                for p in manager.get("user_permissions", [])
+                if p.get("permissions")
+            ]
+            del manager["user_permissions"]
+        permissions = (
+            supabase.table("permissions")
+            .select("permission_name, permission_tag")
+            .execute()
+            .data
+        )
         return (
-            jsonify({"message": "Managers fetched successfully", "data": managers}),
+            jsonify(
+                {
+                    "message": "Managers fetched successfully",
+                    "data": {"managers": managers, "permissions": permissions},
+                }
+            ),
             200,
         )
     except Exception as e:
@@ -304,6 +324,99 @@ def add_password():
     except Exception as e:
         logging.error(f"Error in POST /admin/user-management/add-password: {str(e)}")
         return jsonify({"message": "Internal server error", "status": "error"}), 500
+
+
+@routes.route("/grant-permission", methods=["POST"])
+@require_bearer_token
+def grant_permission(token):
+    try:
+        user_data = decode_jwt_token(token)
+        check_user_exists_and_is_admin = (
+            supabase.table("users")
+            .select("*, roles(name)")
+            .eq("id", user_data["user_id"])
+            .eq("username", user_data["username"])
+            .in_("role_id", [1, 2])
+            .execute()
+        )
+        if not check_user_exists_and_is_admin.data:
+            return (
+                jsonify({"message": "User is not an admin", "status": "error"}),
+                401,
+            )
+
+        data = request.get_json()
+        user_id = data.get("user_id", None)
+        permission_tag = data.get("permission_tag", None)
+        add_permission = data.get("add_permission", True)
+
+        if not user_id or not permission_tag:
+            return (
+                jsonify({"message": "Data body incomplete", "status": "error"}),
+                400,
+            )
+        get_id = (
+            supabase.table("permissions")
+            .select("id")
+            .eq("permission_tag", permission_tag)
+            .execute()
+        )
+
+        if not get_id.data:
+            return (
+                jsonify({"message": "Permission does not exist", "status": "error"}),
+                404,
+            )
+        if add_permission:
+            check = (
+                supabase.table("user_permissions")
+                .select("*")
+                .eq("user_id", user_id)
+                .eq("permission_id", get_id.data[0]["id"])
+                .execute()
+            )
+
+            if check.data:
+                return (
+                    jsonify(
+                        {
+                            "message": "Permission already exists",
+                            "status": "error",
+                        }
+                    ),
+                    400,
+                )
+        else:
+            supabase.table("user_permissions").delete().eq("user_id", user_id).eq(
+                "permission_id", get_id.data[0]["id"]
+            ).execute()
+            return (
+                jsonify(
+                    {"message": "Permission removed successfully", "status": "success"}
+                ),
+                200,
+            )
+
+        add_permission_for_user = (
+            supabase.table("user_permissions")
+            .insert(
+                {
+                    "user_id": user_id,
+                    "permission_id": get_id.data[0]["id"],
+                    "created_at": datetime.now().isoformat(),
+                }
+            )
+            .execute()
+        )
+        return (
+            jsonify({"message": "Permission added successfully", "status": "success"}),
+            201,
+        )
+    except Exception as e:
+        logging.error(
+            f"Error in POST /admin/user-management/grant-permission: {str(e)}"
+        )
+        return jsonify({"error": str(e), "status": "error"}), 500
 
 
 def init_user_management_routes(app):

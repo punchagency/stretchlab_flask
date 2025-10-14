@@ -51,7 +51,9 @@ def login():
 
         user = (
             supabase.table("users")
-            .select("*, roles(name)")
+            .select(
+                "*, roles(name), user_permissions(permissions(permission_name, permission_tag))"
+            )
             .eq("email", data["email"].lower())
             .execute()
         )
@@ -198,9 +200,9 @@ def login():
                     )
                 if user.data[0]["two_factor_auth"]:
                     verification_code = generate_verification_code()
-                    expiration_time = (
-                        datetime.now() + timedelta(minutes=5)
-                    ).isoformat()
+                    expiration_time = (datetime.now() + timedelta(minutes=5)).isoformat(
+                        timespec="microseconds"
+                    )
                     supabase.table("users").update(
                         {
                             "verification_code": verification_code,
@@ -226,9 +228,9 @@ def login():
 
                 if user.data[0]["is_verified"] != True:
                     verification_code = generate_verification_code()
-                    expiration_time = (
-                        datetime.now() + timedelta(minutes=5)
-                    ).isoformat()
+                    expiration_time = (datetime.now() + timedelta(minutes=5)).isoformat(
+                        timespec="microseconds"
+                    )
                     supabase.table("users").update(
                         {
                             "verification_code": verification_code,
@@ -248,13 +250,16 @@ def login():
                         "email": user.data[0]["email"],
                         "role_id": user.data[0]["role_id"],
                         "role_name": role_name,
-                        "rpa_verified": get_business_details.data[0][
-                            "robot_process_automation_active"
-                        ],
+                        "rpa_verified": get_business_details.data[0]["rpa_verified"],
                         "note_verified": get_business_details.data[0][
                             "note_taking_active"
                         ],
                         "username": user.data[0]["username"],
+                        "permissions": [
+                            p["permissions"]
+                            for p in user.data[0]["user_permissions"]
+                            if "permissions" in p
+                        ],
                         "status": user.data[0]["status"],
                     },
                     SECRET_KEY,
@@ -316,7 +321,9 @@ def verify_2fa_login():
 
         user = (
             supabase.table("users")
-            .select("*, roles(name)")
+            .select(
+                "*, roles(name), user_permissions(permissions(permission_name, permission_tag))"
+            )
             .eq("email", email.lower())
             .execute()
         )
@@ -354,11 +361,14 @@ def verify_2fa_login():
                         "role_id": user.data[0]["role_id"],
                         "role_name": role_name,
                         "username": user.data[0]["username"],
-                        "rpa_verified": get_business_details.data[0][
-                            "robot_process_automation_active"
-                        ],
+                        "rpa_verified": get_business_details.data[0]["rpa_verified"],
                         "note_verified": get_business_details.data[0][
                             "note_taking_active"
+                        ],
+                        "permissions": [
+                            p["permissions"]
+                            for p in user.data[0]["user_permissions"]
+                            if "permissions" in p
                         ],
                     },
                     SECRET_KEY,
@@ -575,7 +585,9 @@ def register():
             }
         ).execute()
         verification_code = generate_verification_code()
-        expiration_time = (datetime.now() + timedelta(minutes=20)).isoformat()
+        expiration_time = (datetime.now() + timedelta(minutes=20)).isoformat(
+            timespec="microseconds"
+        )
         supabase.table("users").update(
             {
                 "verification_code": verification_code,
@@ -652,7 +664,9 @@ def resend_2fa_verification_code():
         if not user.data:
             return jsonify({"message": "User not found", "status": "error"}), 404
         verification_code = generate_verification_code()
-        expiration_time = (datetime.now() + timedelta(minutes=5)).isoformat()
+        expiration_time = (datetime.now() + timedelta(minutes=5)).isoformat(
+            timespec="microseconds"
+        )
         supabase.table("users").update(
             {
                 "verification_code": verification_code,
@@ -774,7 +788,9 @@ def resend_verification_code(token):
         )
         if user.data:
             verification_code = generate_verification_code()
-            expiration_time = (datetime.now() + timedelta(minutes=20)).isoformat()
+            expiration_time = (datetime.now() + timedelta(minutes=20)).isoformat(
+                timespec="microseconds"
+            )
             supabase.table("users").update(
                 {
                     "verification_code": verification_code,
