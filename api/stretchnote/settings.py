@@ -155,6 +155,76 @@ def update_clubready_details(token):
         return jsonify({"error": str(e), "status": "error"}), 500
 
 
+@routes.route("/update-profile-name", methods=["POST"])
+@require_bearer_token
+def update_profile_name(token):
+    try:
+        user_data = decode_jwt_token(token)
+        data = request.get_json()
+        if not data.get("profile_name"):
+            return (
+                jsonify({"message": "A new name is required", "status": "error"}),
+                400,
+            )
+        user = (
+            supabase.table("users").select("*").eq("id", user_data["user_id"]).execute()
+        )
+        if not user.data:
+            return jsonify({"message": "User not found", "status": "error"}), 404
+
+        account_id = data.get("account_id", None)
+        if account_id:
+            other_accounts = (
+                json.loads(user.data[0]["other_clubready_accounts"])
+                if user.data[0]["other_clubready_accounts"]
+                else None
+            )
+            if not other_accounts:
+                return (
+                    jsonify(
+                        {
+                            "message": "No other clubready accounts found",
+                            "status": "error",
+                        }
+                    ),
+                    404,
+                )
+            for account in other_accounts:
+                if account["id"] == account_id:
+                    account["full_name"] = data["profile_name"]
+                    break
+            other_accounts = json.dumps(other_accounts)
+            supabase.table("users").update(
+                {
+                    "other_clubready_accounts": other_accounts,
+                }
+            ).eq("id", user_data["user_id"]).execute()
+        else:
+            full_name = data["profile_name"]
+
+            supabase.table("users").update(
+                {
+                    "full_name": full_name,
+                }
+            ).eq("id", user_data["user_id"]).execute()
+
+        logging.info(f"Profile name updated successfully for user {user_data['email']}")
+        return (
+            jsonify(
+                {
+                    "message": "Display name updated successfully",
+                    "status": "success",
+                }
+            ),
+            200,
+        )
+    except Exception as e:
+        logging.error(
+            f"Error in POST api/stretchnote/settings/update-profile-name: {str(e)}"
+        )
+        return jsonify({"error": str(e), "status": "error"}), 500
+
+
 @routes.route("/add-clubready-account", methods=["POST"])
 @require_bearer_token
 def add_clubready_account(token):

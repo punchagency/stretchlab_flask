@@ -3,6 +3,7 @@ import stripe
 from dotenv import load_dotenv
 import os
 from datetime import datetime
+from ..utils.robot import update_user_rule_schedule
 
 load_dotenv()
 
@@ -203,45 +204,99 @@ def webhook():
         subscription = event["data"]["object"]
         subscription_id = subscription["id"]
         customer_id = subscription["customer"]
-        quantity = subscription["items"]["data"][0]["quantity"]
         status = subscription["status"]
+        trial_end = subscription.get("trial_end")
+        quantity = subscription["items"]["data"][0]["quantity"]
+
         previous_attributes = event["data"].get("previous_attributes", {})
-        get_user = (
+        existing = (
             supabase.table("businesses")
-            .select("admin_id")
+            .select("*")
             .eq("customer_id", customer_id)
             .execute()
         )
 
+        # --- CASE 1: Detect if trial just ended ---
         if (
-            "status" in previous_attributes
-            and previous_attributes["status"] == "trialing"
+            trial_end
+            and datetime.utcnow().timestamp() > trial_end
             and status == "active"
         ):
-            print(f"Trial ended for subscription {subscription_id}, now active")
-            supabase.table("notifications").insert(
-                {
-                    "user_id": get_user.data[0]["admin_id"],
-                    "message": "Your trial has ended and your subscription is now active.",
-                    "is_read": False,
-                    "created_at": datetime.now().isoformat(),
-                    "type": "payment",
-                }
-            ).execute()
 
-        if "items" in previous_attributes:
-            print(
-                f"Subscription {subscription_id} updated: {quantity} flexologists, status: {status}"
+            if existing.data:
+                if (
+                    existing.data[0]["note_taking_subscription_id"] == subscription_id
+                    and existing.data[0]["note_taking_subscription_status"]
+                    == "trialing"
+                ):
+                    supabase.table("businesses").update(
+                        {"note_taking_subscription_status": "active"}
+                    ).eq("admin_id", existing.data[0]["admin_id"]).execute()
+                    supabase.table("notifications").insert(
+                        {
+                            "user_id": existing.data[0]["admin_id"],
+                            "message": f"Stretchnote capture trial ended",
+                            "is_read": False,
+                            "created_at": datetime.now().isoformat(),
+                            "type": "payment",
+                        }
+                    ).execute()
+                elif (
+                    existing.data[0]["robot_process_automation_subscription_id"]
+                    == subscription_id
+                    and existing.data[0]["robot_process_automation_subscription_status"]
+                    == "trialing"
+                ):
+                    supabase.table("businesses").update(
+                        {"robot_process_automation_subscription_status": "active"}
+                    ).eq("admin_id", existing.data[0]["admin_id"]).execute()
+                    supabase.table("notifications").insert(
+                        {
+                            "user_id": existing.data[0]["admin_id"],
+                            "message": f"Stretchnote insight trial ended",
+                            "is_read": False,
+                            "created_at": datetime.now().isoformat(),
+                            "type": "payment",
+                        }
+                    ).execute()
+
+                else:
+                    # already marked, skip
+                    pass
+
+        # --- CASE 2: Detect if quantity changed (flexologist added/removed) ---
+        elif "items" in previous_attributes or "quantity" in str(previous_attributes):
+            old_quantity = (
+                previous_attributes.get("items", {})
+                .get("data", [{}])[0]
+                .get("quantity", None)
             )
-            supabase.table("notifications").insert(
-                {
-                    "user_id": get_user.data[0]["admin_id"],
-                    "message": f"A new flexologist has been added to your subscription",
-                    "is_read": False,
-                    "created_at": datetime.now().isoformat(),
-                    "type": "payment",
-                }
-            ).execute()
+
+            if old_quantity is not None and old_quantity != quantity:
+                service = None
+
+                if get_user.data[0]["note_taking_subscription_id"] == subscription_id:
+                    service = "note-taking"
+                else:
+                    service = "robot"
+
+                get_user = (
+                    supabase.table("businesses")
+                    .select("admin_id")
+                    .eq("customer_id", customer_id)
+                    .execute()
+                )
+
+                if get_user.data:
+                    supabase.table("notifications").insert(
+                        {
+                            "user_id": get_user.data[0]["admin_id"],
+                            "message": f'{"A new flexologist" if service == "note-taking" else "A new location"} has been added to your subscription',
+                            "is_read": False,
+                            "created_at": datetime.now().isoformat(),
+                            "type": "payment",
+                        }
+                    ).execute()
 
     elif event["type"] == "customer.subscription.created":
         subscription = event["data"]["object"]
@@ -253,11 +308,16 @@ def webhook():
         )
         get_user = (
             supabase.table("businesses")
-            .select("admin_id")
+            .select("*")
             .eq("customer_id", customer_id)
             .execute()
         )
-        message = "Subscription created successfully"
+        message = ""
+        if get_user.data[0]["note_taking_subscription_id"] == subscription_id:
+            message = "Stretchnote capture subscription created successfully"
+        else:
+            message = "Stretchnote insight subscription created successfully"
+
         if subscription["status"] == "trialing" and subscription.get("trial_end"):
             trial_end_date = datetime.fromtimestamp(subscription["trial_end"]).strftime(
                 "%Y-%m-%d"
@@ -276,31 +336,59 @@ def webhook():
         subscription = event["data"]["object"]
         subscription_id = subscription["id"]
         customer_id = subscription["customer"]
-        quantity = subscription["items"]["data"][0]["quantity"]
-        print(
-            f"Subscription {subscription_id} created for customer {customer_id} with {quantity} flexologists"
-        )
         get_user = (
             supabase.table("businesses")
-            .select("admin_id")
+            .select("*")
             .eq("customer_id", customer_id)
             .execute()
         )
-        message = "Your trial will end soon."
-        if subscription["status"] == "trialing" and subscription.get("trial_end"):
-            trial_end_date = datetime.fromtimestamp(subscription["trial_end"]).strftime(
-                "%Y-%m-%d"
-            )
-            message += f" With trial ending on {trial_end_date}"
+        service = None
+
+        if get_user.data[0]["note_taking_subscription_id"] == subscription_id:
+            service = "note-taking"
+        else:
+            service = "robot"
         supabase.table("notifications").insert(
             {
                 "user_id": get_user.data[0]["admin_id"],
-                "message": message,
+                "message": f'{"Stretchnote Capture" if service == "note-taking" else "Stretchnote Insights"} subscription trial will end in 3 days',
                 "is_read": False,
                 "created_at": datetime.now().isoformat(),
                 "type": "payment",
             }
         ).execute()
+    elif event["type"] == "customer.subscription.deleted":
+        subscription = event["data"]["object"]
+        subscription_id = subscription["id"]
+        customer_id = subscription["customer"]
+        get_user = (
+            supabase.table("businesses")
+            .select("*")
+            .eq("customer_id", customer_id)
+            .execute()
+        )
+        if get_user.data[0]["note_taking_subscription_id"] == subscription_id:
+            supabase.table("businesses").update(
+                {
+                    "note_taking_active": False,
+                    "note_taking_subscription_status": "cancelled",
+                }
+            ).eq("admin_id", get_user.data[0]["admin_id"]).execute()
+        else:
+            rule_arn = update_user_rule_schedule(
+                username=get_user.data[0]["username"],
+                state="DISABLED",
+            )
+            if rule_arn:
+                supabase.table("robot_process_automation_config").update(
+                    {"active": False}
+                ).eq("admin_id", get_user.data[0]["admin_id"]).execute()
+                supabase.table("businesses").update(
+                    {
+                        "robot_process_automation_active": False,
+                        "robot_process_automation_subscription_status": "cancelled",
+                    }
+                ).eq("admin_id", get_user.data[0]["admin_id"]).execute()
 
     return jsonify({"status": "success"}), 200
 

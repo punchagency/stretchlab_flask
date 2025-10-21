@@ -1478,8 +1478,75 @@ def get_business_info(token):
             business_flexologists_count = 0
             business_flexologists_info = []
         else:
+            # Aggregate flexologist booking analytics by location
             business_flexologists_count = len(get_flexologists_info.data)
             business_flexologists_info = get_flexologists_info.data
+
+            # location -> {
+            #   "flexologists": [ { name, total_bookings, total_submitted } ],
+            #   "total_bookings_in_location": int,
+            #   "total_submitted_by_location": int,
+            # }
+            location_aggregates = {}
+            current_date = datetime.now()
+            end_date = (current_date - timedelta(days=1)).replace(
+                hour=23, minute=59, second=59, microsecond=999999
+            )
+            start_date = (end_date - timedelta(days=30)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+
+            for flex in get_flexologists_info.data:
+                bookings_response = (
+                    supabase.table("clubready_bookings")
+                    .select("submitted, location")
+                    .eq("user_id", flex["id"])
+                    .gte("created_at", start_date)
+                    .lt("created_at", end_date)
+                    .execute()
+                )
+
+                if not bookings_response.data:
+                    continue
+
+                # Group this flexologist's bookings by location
+                per_location_counts = {}
+                for row in bookings_response.data:
+                    loc = row.get("location")
+                    if not loc:
+                        continue
+                    if loc not in per_location_counts:
+                        per_location_counts[loc] = {"total": 0, "submitted": 0}
+                    per_location_counts[loc]["total"] += 1
+                    if bool(row.get("submitted")):
+                        per_location_counts[loc]["submitted"] += 1
+
+                # Merge this flexologist's stats into the global location aggregates
+                for loc, counts in per_location_counts.items():
+                    if loc not in location_aggregates:
+                        location_aggregates[loc] = {
+                            "location": loc,
+                            "flexologists": [],
+                            "total_bookings_in_location": 0,
+                            "total_submitted_by_location": 0,
+                        }
+
+                    location_aggregates[loc]["flexologists"].append(
+                        {
+                            "name": flex.get("full_name"),
+                            "total_bookings": counts["total"],
+                            "total_submitted": counts["submitted"],
+                        }
+                    )
+                    location_aggregates[loc]["total_bookings_in_location"] += counts[
+                        "total"
+                    ]
+                    location_aggregates[loc]["total_submitted_by_location"] += counts[
+                        "submitted"
+                    ]
+
+            # Convert dict to the desired array format
+            locations_summary = list(location_aggregates.values())
 
         get_rpa_config_info = (
             supabase.table("robot_process_automation_config")
@@ -1570,6 +1637,9 @@ def get_business_info(token):
                         "business_note_sub_details": business_note_sub_details,
                         "business_rpa_sub_details": business_rpa_sub_details,
                         "business_flexologists_info": business_flexologists_info,
+                        "locations_summary": (
+                            locations_summary if "locations_summary" in locals() else []
+                        ),
                     },
                 }
             ),

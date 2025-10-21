@@ -10,6 +10,7 @@ from ..payment.stripe_utils import (
     cancel_subscription,
     restart_subscription,
     get_coupon_details,
+    retrieve_payment_method,
 )
 import logging
 from ..notification import insert_notification
@@ -313,12 +314,15 @@ def cancel_subscription_route(token):
                 cancel_subscription(
                     subscription_id.data[0]["note_taking_subscription_id"]
                 )
-                supabase.table("businesses").update({"note_taking_active": False}).eq(
-                    "admin_id", user_data["user_id"]
-                ).execute()
+                supabase.table("businesses").update(
+                    {
+                        "note_taking_active": False,
+                        "note_taking_subscription_status": "cancelled",
+                    }
+                ).eq("admin_id", user_data["user_id"]).execute()
                 insert_notification(
                     user_data["user_id"],
-                    f"Note taking subscription was cancelled",
+                    f"Stretchnote capture subscription was cancelled",
                     "payment",
                 )
         elif sub_type == "robot_process_automation":
@@ -341,12 +345,15 @@ def cancel_subscription_route(token):
                         {"active": False}
                     ).eq("admin_id", user_data["user_id"]).execute()
                     supabase.table("businesses").update(
-                        {"robot_process_automation_active": False}
+                        {
+                            "robot_process_automation_active": False,
+                            "robot_process_automation_subscription_status": "cancelled",
+                        }
                     ).eq("admin_id", user_data["user_id"]).execute()
 
                 insert_notification(
                     user_data["user_id"],
-                    f"Robot process automation subscription was cancelled",
+                    f"Stretchnote insight subscription was cancelled",
                     "payment",
                 )
         return (
@@ -448,6 +455,65 @@ def restart_subscription_route(token):
         )
     except Exception as e:
         logging.error(f"Error in POST api/admin/payment/restart-subscription: {str(e)}")
+        return jsonify({"error": str(e), "status": "error"}), 500
+
+
+@routes.route("/get-payment-info", methods=["GET"])
+@require_bearer_token
+def get_payment_info(token):
+    try:
+        user_data = decode_jwt_token(token)
+        get_user_details = (
+            supabase.table("users")
+            .select("*")
+            .eq("id", user_data["user_id"])
+            .eq("username", user_data["username"])
+            .in_("role_id", [1, 2])
+            .execute()
+        )
+        if not get_user_details.data:
+            return jsonify({"message": "Unauthorized", "status": "error"}), 401
+
+        check_subscription = (
+            supabase.table("businesses")
+            .select("payment_id")
+            .eq("admin_id", get_user_details.data[0]["admin_id"])
+            .execute()
+        )
+
+        if not check_subscription.data[0]["payment_id"]:
+            return jsonify({"message": "No payment method", "status": "error"}), 404
+
+        payment_method = retrieve_payment_method(
+            check_subscription.data[0]["payment_id"]
+        )
+        paymentinfo = None
+
+        if payment_method["type"] == "card":
+            paymentinfo = {
+                "type": payment_method["type"],
+                "brand": payment_method.card.brand,
+                "last4": payment_method.card.last4,
+                "exp_month": payment_method.card.exp_month,
+                "exp_year": payment_method.card.exp_year,
+                "country": payment_method.card.country,
+                "name": payment_method.billing_details.name,
+                "email": payment_method.billing_details.email,
+            }
+        else:
+            paymentinfo = {"type": payment_method["type"]}
+        return (
+            jsonify(
+                {
+                    "message": "Payment method fetched",
+                    "payment_info": paymentinfo,
+                    "status": "success",
+                }
+            ),
+            200,
+        )
+    except Exception as e:
+        logging.error(f"Error in POST api/admin/payment/get-payment-info: {str(e)}")
         return jsonify({"error": str(e), "status": "error"}), 500
 
 

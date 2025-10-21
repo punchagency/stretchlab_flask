@@ -1716,8 +1716,28 @@ async def get_user_bookings_from_clubready(user_details, max_concurrency=3):
                             location_element = await page.query_selector(
                                 "#smalltopmenu .club-name"
                             )
-                            location = await location_element.inner_text()
-                            print(location)
+                            if location_element:
+                                location = await location_element.inner_text()
+                                print(location, "here")
+                            else:
+                                new_page = await context.new_page()
+                                try:
+                                    await new_page.goto(
+                                        "https://scheduling.clubready.com/day"
+                                    )
+                                    await new_page.wait_for_load_state(
+                                        "networkidle", timeout=0
+                                    )
+                                    location_element = await new_page.query_selector(
+                                        ".location-name"
+                                    )
+                                    if location_element:
+                                        location = (
+                                            await location_element.inner_text()
+                                        ).strip()
+                                        print(location, "location")
+                                finally:
+                                    await new_page.close()
 
                             my_booking_tab = await page.wait_for_selector(
                                 "#dvtab1", state="visible", timeout=40000

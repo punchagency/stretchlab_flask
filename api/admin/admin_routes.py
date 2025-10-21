@@ -613,7 +613,7 @@ def update_user_status(token):
         ).execute()
         insert_notification(
             user_data["user_id"],
-            f"Your chnaged the status of {email} to {status == 1 and 'active' or 'disabled'}",
+            f"You changed the status of {email} to {status == 1 and 'active' or 'disabled'}",
             "note taking",
         )
         return (
@@ -1063,7 +1063,6 @@ def get_rpa_history(token, config_id):
             supabase.table("robot_process_automation_notes_records")
             .select("*")
             .eq("config_id", config_id)
-            .eq("first_timer", "NO")
             .gte("appointment_date", start_date)
             .lt("appointment_date", end_date)
             .execute()
@@ -1228,6 +1227,56 @@ def update_settings(token):
         )
     except Exception as e:
         logging.error(f"Error in POST api/admin/process/update-settings: {str(e)}")
+        return jsonify({"error": str(e), "status": "error"}), 500
+
+
+@routes.route("/get-opportunities", methods=["GET"])
+@require_bearer_token
+def get_opportunites(token):
+    try:
+        user_data = decode_jwt_token(token)
+        check_user_exists_and_is_admin = (
+            supabase.table("users")
+            .select("*")
+            .eq("id", user_data["user_id"])
+            .in_("role_id", [1, 2])
+            .execute()
+        )
+        if not check_user_exists_and_is_admin.data:
+            return (
+                jsonify({"message": "User is not an admin", "status": "error"}),
+                401,
+            )
+        opportunities = [
+            "Confirmation Call",
+            "Grip Sock Notice",
+            "Arrive Early",
+            "Location",
+            "Prepaid",
+            "Keynote",
+            "Stated Goal",
+            "Emotional Why",
+            "Prior Solutions",
+            "Routine Captured",
+            "Physical/Medical Issue",
+            "Plan Recommendation",
+            "Problem Presented",
+            "Current Session Activity",
+            "Next Session Focus",
+            "Homework",
+        ]
+        return (
+            jsonify(
+                {
+                    "message": "Opportunites fetched",
+                    "status": "success",
+                    "opportunites": opportunities,
+                }
+            ),
+            200,
+        )
+    except Exception as e:
+        logging.error(f"Error in POST api/admin/process/get-opportunities: {str(e)}")
         return jsonify({"error": str(e), "status": "error"}), 500
 
 
