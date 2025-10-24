@@ -990,17 +990,6 @@ def get_ai_logic(token):
             .execute()
             .data
         )
-        if not rpa_notes:
-            return (
-                jsonify(
-                    {
-                        "average_quality_notes_percentage": 0,
-                        "top_opportunities": [],
-                        "status": "success",
-                    }
-                ),
-                200,
-            )
 
         total_quality_notes_percentage_array = []
 
@@ -1039,7 +1028,7 @@ def get_ai_logic(token):
                 if note["note_score"] == "N/A":
                     percentage = 0
                 else:
-                    percentage = (int(note["note_score"]) * 100) / 18
+                    percentage = (int(note["note_score"]) * 100) / 17
             else:
                 if note["note_score"] == "N/A":
                     percentage = 0
@@ -1065,9 +1054,15 @@ def get_ai_logic(token):
             for opp, count in top_opportunities
         ]
 
-        total_average_quality_notes_percentage = sum(
-            total_quality_notes_percentage_array
-        ) / len(total_quality_notes_percentage_array)
+        if len(total_quality_notes_percentage_array) > 0:
+            total_average_quality_notes_percentage = sum(
+                total_quality_notes_percentage_array
+            ) / len(total_quality_notes_percentage_array)
+        else:
+            total_average_quality_notes_percentage = 0
+        
+        print(sum(total_quality_notes_percentage_array))
+        print(len(total_quality_notes_percentage_array))
 
         return (
             jsonify(
@@ -1098,7 +1093,7 @@ def get_questions(token, booking_id):
             )
         notes = (
             supabase.table("booking_notes")
-            .select("*")
+            .select("note")
             .eq("booking_id", booking_id)
             .eq("type", "user")
             .execute()
@@ -1113,9 +1108,20 @@ def get_questions(token, booking_id):
         if not get_booking.data:
             return jsonify({"message": "Booking not found", "status": "error"}), 404
 
+        # format_style = supabase.table("users").select("format_style").eq("id",user_data['user_id']).execute().data
+
+        # format_style = format_style[0]['format_style']
+
         active = get_booking.data[0]["active_member"]
+
+        notestr = ""
+        for note in notes.data:
+            notestr+= f"{note['note']}. "
+            
         questions = scrutinize_notes(notes, active)
-        formatted_notes = format_notes(notes)
+        
+        formatted_notes = format_notes(notestr)
+        
 
         note_data = {
             "flexologist_uid": user_data["user_id"],
@@ -1278,16 +1284,20 @@ def submit_notes_route(token):
         username = None
         password = None
 
-        if not other_accounts:
-            username = user_details.data[0]["clubready_username"]
-            password = user_details.data[0]["clubready_password"]
-        else:
+        # First, try to find an active account in other_accounts
+        if other_accounts:
             for account in other_accounts:
-                if account["active"] == True:
+                if account.get("active") == True:
                     username = account["username"]
                     password = account["password"]
                     break
-
+        
+        # If no active account found, use main account credentials
+        if not username or not password:
+            username = user_details.data[0]["clubready_username"]
+            password = user_details.data[0]["clubready_password"]
+    
+        # Final check - if still no credentials, return error
         if not username or not password:
             return jsonify({"error": "No account found", "status": "error"}), 404
 

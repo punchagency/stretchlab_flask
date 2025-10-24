@@ -1239,7 +1239,7 @@ def get_opportunites(token):
             supabase.table("users")
             .select("*")
             .eq("id", user_data["user_id"])
-            .in_("role_id", [1, 2])
+            .in_("role_id", [1, 2, 4, 8])
             .execute()
         )
         if not check_user_exists_and_is_admin.data:

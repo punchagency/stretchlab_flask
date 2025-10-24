@@ -422,6 +422,70 @@ def delete_clubready_account(token):
         return jsonify({"error": str(e), "status": "error"}), 500
 
 
+@routes.route("/get-format-type", methods=["GET"])
+@require_bearer_token
+def get_format_type(token):
+    try:
+        user_data = decode_jwt_token(token)
+        check_user = (
+            supabase.table("users").select("*").eq("id", user_data["user_id"]).execute()
+        )
+        if not check_user.data:
+            return jsonify({"message": "User not found", "status": "error"}), 404
+
+        format_type = check_user.data[0]['format_style']
+        
+        return jsonify({"accounts": format_type, "status": "success"}), 200
+    except Exception as e:
+        logging.error(
+            f"Error in GET api/stretchnote/settings/get-format-type: {str(e)}"
+        )
+        return jsonify({"error": str(e), "status": "error"}), 500
+
+
+@routes.route("/change-format-style", methods=["POST"])
+@require_bearer_token
+def change_format_style(token):
+    try:
+        user_data = decode_jwt_token(token)
+        data = request.get_json()
+        if not data.get("format_style"):
+            return (
+                jsonify({"message": "Formatted note style is needed", "status": "error"}),
+                400,
+            )
+
+        check_user = (
+            supabase.table("users").select("*").eq("id", user_data["user_id"]).execute()
+        )
+        if not check_user.data:
+            return jsonify({"message": "User not found", "status": "error"}), 404
+
+        format_style = data.get("format_style")
+
+        if format_style not in ['strict', 'expressive']:
+            return jsonify({"message": "Not a valid format type", "status": "error"}), 400
+
+        supabase.table("users").update({
+            "format_style": format_style
+        }).eq("id", user_data["user_id"]).execute()
+
+        return (
+            jsonify(
+                {
+                    "message": "Format style changed successfully",
+                    "status": "success",
+                }
+            ),
+            200,
+        )
+    except Exception as e:
+        logging.error(
+            f"Error in POST api/stretchnote/settings/change-format-style: {str(e)}"
+        )
+        return jsonify({"error": str(e), "status": "error"}), 500
+
+
 def init_note_settings_routes(app):
     global supabase
     supabase = app.config["SUPABASE"]
