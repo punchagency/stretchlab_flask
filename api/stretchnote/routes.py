@@ -732,6 +732,7 @@ def get_bookings(token):
                                 "submitted": False,
                                 "submitted_notes": None,
                                 "created_at": client_date,
+                                "profile_picture": booking["profile_image"],
                                 "account_id": account_id,
                             }
                         ).execute()
@@ -1086,80 +1087,75 @@ def get_ai_logic(token):
 def get_questions(token, booking_id):
     try:
         user_data = decode_jwt_token(token)
-        if user_data["role_id"] not in [3, 8]:
-            return (
-                jsonify({"message": "Unauthorized", "status": "error"}),
-                401,
-            )
-        notes = (
+        role_id = user_data.get("role_id")
+        user_id = user_data.get("user_id")
+
+        if role_id not in {3, 8}:
+            return jsonify({"message": "Unauthorized", "status": "error"}), 401
+
+        # Ensure booking exists first
+        booking_resp = (
+            supabase.table("clubready_bookings")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("booking_id", booking_id)
+            .execute()
+        )
+        if not booking_resp.data:
+            return jsonify({"message": "Booking not found", "status": "error"}), 404
+
+        active = booking_resp.data[0].get("active_member")
+
+        # Fetch notes only after booking validation
+        notes_resp = (
             supabase.table("booking_notes")
             .select("note")
             .eq("booking_id", booking_id)
             .eq("type", "user")
             .execute()
         )
-        get_booking = (
-            supabase.table("clubready_bookings")
-            .select("*")
-            .eq("user_id", user_data["user_id"])
-            .eq("booking_id", booking_id)
-            .execute()
-        )
-        if not get_booking.data:
-            return jsonify({"message": "Booking not found", "status": "error"}), 404
 
-        # format_style = supabase.table("users").select("format_style").eq("id",user_data['user_id']).execute().data
+        notestr = ". ".join(note["note"] for note in notes_resp.data if note.get("note")) + "."
 
-        # format_style = format_style[0]['format_style']
-
-        active = get_booking.data[0]["active_member"]
-
-        notestr = ""
-        for note in notes.data:
-            notestr+= f"{note['note']}. "
-            
-        questions = scrutinize_notes(notes, active)
-        
+        questions = scrutinize_notes(notes_resp, active)
         formatted_notes = format_notes(notestr)
-        
+
+        qs = questions.get("questions", [])
+
+        if "no questions" in qs:
+            qs = []
+
+        timestamp = get_client_datetime().strftime("%Y-%m-%d %H:%M:%S")
 
         note_data = {
-            "flexologist_uid": user_data["user_id"],
-            "note": json.dumps(
-                questions["questions"]
-                if "no questions" not in questions["questions"]
-                else []
-            ),
-            "time": get_client_datetime().strftime("%Y-%m-%d %H:%M:%S"),
+            "flexologist_uid": user_id,
+            "note": json.dumps(qs),
+            "time": timestamp,
             "voice": "assistant",
             "type": "assistant",
             "booking_id": booking_id,
             "formatted_notes": json.dumps(formatted_notes),
-            "created_at": get_client_datetime().strftime("%Y-%m-%d %H:%M:%S"),
+            "created_at": timestamp,
         }
-        create_note = supabase.table("booking_notes").insert(note_data).execute()
-        if create_note.data:
+
+        insert_resp = supabase.table("booking_notes").insert(note_data).execute()
+
+        if insert_resp.data:
             return (
                 jsonify(
                     {
-                        "questions": (
-                            questions
-                            if "no questions" not in questions["questions"]
-                            else {"questions": []}
-                        ),
+                        "questions": {"questions": qs},
                         "formatted_notes": formatted_notes,
                         "status": "success",
                     }
                 ),
                 200,
             )
-        else:
-            return (
-                jsonify({"message": "Notes addition failed", "status": "error"}),
-                400,
-            )
+
+        return jsonify({"message": "Notes addition failed", "status": "error"}), 400
+
     except Exception as e:
-        logging.error(f"Error in POST /api/resource: {str(e)}")
+        logging.exception("Error in get_questions")
         return jsonify({"error": "Internal server error", "status": "error"}), 500
 
 

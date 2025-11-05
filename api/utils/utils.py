@@ -1646,7 +1646,16 @@ async def fetch_bookings_for_location(page, base_url, location_text, semaphore):
                 event_date = (
                     await event_date_elem.inner_text() if event_date_elem else "N/A"
                 )
-                print(location_text)
+                profile_elem = await table.query_selector(
+                    "table tbody tr td:first-child img"
+                )
+                profile_image = await profile_elem.get_attribute("src") if profile_elem else "N/A"
+                if profile_image != "N/A":
+                    if "nouser" in profile_image:
+                        profile_image = "https://app.clubready.com/images/nouserphoto.png"
+                    else:
+                        profile_image = f"https://clubready.blob.core.windows.net/{profile_image}"
+                
                 result = {
                     "client_name": client_name,
                     "booking_id": booking_id,
@@ -1665,6 +1674,7 @@ async def fetch_bookings_for_location(page, base_url, location_text, semaphore):
                     "first_timer": first_timer,
                     "active": active,
                     "location": location_text,
+                    "profile_image": profile_image
                 }
                 all_bookings.append(result)
 
@@ -1836,7 +1846,17 @@ async def get_user_bookings_from_clubready(user_details, max_concurrency=3):
                                     if event_date_elem
                                     else "N/A"
                                 )
-                                print(location)
+                                profile_elem = await table.query_selector(
+                                    "table tbody tr td:first-child img"
+                                )
+                                profile_image = await profile_elem.get_attribute("src") if profile_elem else "N/A"
+
+                                if profile_image != "N/A":
+                                    if "nouser" in profile_image:
+                                        profile_image = "https://app.clubready.com/images/nouserphoto.png"
+                                    else:
+                                        profile_image = f"https://clubready.blob.core.windows.net/{profile_image}"
+
                                 result = {
                                     "client_name": client_name,
                                     "booking_id": booking_id,
@@ -1857,6 +1877,7 @@ async def get_user_bookings_from_clubready(user_details, max_concurrency=3):
                                     "first_timer": first_timer,
                                     "active": active,
                                     "location": location,
+                                    "profile_image": profile_image
                                 }
                                 all_bookings.append(result)
 
@@ -2305,7 +2326,20 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
                                 submit_btn.click()
                                 same_client_booking = None
                                 page.wait_for_timeout(1000)
-
+                            else:
+                                screenshot_url = capture_and_upload_screenshot(
+                                    page, "no_session_logged"
+                                )
+                                raise Exception(
+                                    f"No session logged{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                                )
+                        else:
+                            screenshot_url = capture_and_upload_screenshot(
+                                page, "no_mid_div"
+                            )
+                            raise Exception(
+                                f"No mid div found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                            )
                 else:
                     screenshot_url = capture_and_upload_screenshot(
                         page, "no_matching_booking"
@@ -2600,6 +2634,20 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
                                     submit_btn.click()
                                     same_client_booking = None
                                     page.wait_for_timeout(1000)
+                                else:
+                                    screenshot_url = capture_and_upload_screenshot(
+                                        page, "no_session_logged"
+                                    )
+                                    raise Exception(
+                                        f"No session logged{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                                    )
+                            else:
+                                screenshot_url = capture_and_upload_screenshot(
+                                    page, "no_mid_div"
+                                )
+                                raise Exception(
+                                    f"No mid div found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                                )
                     else:
                         screenshot_url = capture_and_upload_screenshot(
                             page, "no_matching_booking"

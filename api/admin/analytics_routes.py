@@ -18,25 +18,29 @@ def rpa_audit(token):
         location = request.args.get("location")
         filter_metric = request.args.get("filter_metric")
         flexologist_name = request.args.get("flexologist_name")
-        user_id = (
+        
+        # Get user's admin_id
+        user_info = (
             supabase.table("users")
             .select("admin_id")
             .eq("id", user_data["user_id"])
+            .single()
             .execute()
-        ).data[0]["admin_id"]
+        )
+        user_id = user_info.data["admin_id"]
 
         if not duration:
             return jsonify({"error": "Duration is required", "status": "error"}), 400
+
+        # Get date range
         if duration == "custom":
             start_date_str = request.args.get("start_date")
             end_date_str = request.args.get("end_date")
             if not start_date_str or not end_date_str:
-                return (
-                    jsonify(
-                        {"error": "Start and end date are required", "status": "error"}
-                    ),
-                    400,
-                )
+                return jsonify({
+                    "error": "Start and end date are required",
+                    "status": "error"
+                }), 400
             start_date, end_date = get_start_and_end_date(
                 duration, start_date_str, end_date_str
             )
@@ -46,220 +50,86 @@ def rpa_audit(token):
         if not start_date or not end_date:
             return jsonify({"error": "Invalid duration", "status": "error"}), 400
 
-        print(start_date, end_date, "start_date, end_date")
-
-        config_id = (
+        # Get config_id
+        config_result = (
             supabase.table("robot_process_automation_config")
             .select("id")
             .eq("admin_id", user_id)
+            .single()
             .execute()
-        ).data
+        )
 
-        if not config_id:
+        if not config_result.data:
             return jsonify({"error": "No RPA config found", "status": "error"}), 400
 
-        filter_bookings = None
+        config_id = config_result.data["id"]
 
+        # Determine filter_bookings value
+        filter_bookings = None
         if filter_metric == "first":
             filter_bookings = "YES"
-
-        if filter_metric == "subsequent":
+        elif filter_metric == "subsequent":
             filter_bookings = "NO"
 
-        config_id = config_id[0]["id"]
+        # Build query dynamically - NO CODE DUPLICATION
         rpa_notes = []
         offset = 0
         limit = 1000
-        if not location and not flexologist_name:
-            while True:
-                if filter_bookings:
-                    data = (
-                        supabase.table("robot_process_automation_notes_records")
-                        .select(
-                            "flexologist_name, location, first_timer, note_score, appointment_date, note_oppurtunities"
-                        )
-                        .eq("config_id", config_id)
-                        .eq("first_timer", filter_bookings)
-                        .neq("status", "No Show")
-                        .gte("appointment_date", start_date)
-                        .lt("appointment_date", end_date)
-                        .range(offset, offset + limit - 1)
-                        .execute()
-                    ).data
-                else:
-                    data = (
-                        supabase.table("robot_process_automation_notes_records")
-                        .select(
-                            "flexologist_name, location, first_timer, note_score, appointment_date, note_oppurtunities"
-                        )
-                        .eq("config_id", config_id)
-                        .neq("status", "No Show")
-                        .gte("appointment_date", start_date)
-                        .lt("appointment_date", end_date)
-                        .range(offset, offset + limit - 1)
-                        .execute()
-                    ).data
-                rpa_notes.extend(data)
-                if len(data) < limit:
-                    break
-                offset += limit
 
-        if location and not flexologist_name:
-            print(start_date, end_date, "start_date, end_date")
-
-            while True:
-                if filter_bookings:
-                    data = (
-                        supabase.table("robot_process_automation_notes_records")
-                        .select(
-                            "flexologist_name, location, first_timer, note_score, appointment_date, note_oppurtunities"
-                        )
-                        .eq("config_id", config_id)
-                        .eq("location", location)
-                        .eq("first_timer", filter_bookings)
-                        .neq("status", "No Show")
-                        .gte("appointment_date", start_date)
-                        .lt("appointment_date", end_date)
-                        .range(offset, offset + limit - 1)
-                        .execute()
-                    ).data
-                else:
-                    data = (
-                        supabase.table("robot_process_automation_notes_records")
-                        .select(
-                            "flexologist_name, location, first_timer, note_score, appointment_date, note_oppurtunities"
-                        )
-                        .eq("config_id", config_id)
-                        .eq("location", location)
-                        .neq("status", "No Show")
-                        .gte("appointment_date", start_date)
-                        .lt("appointment_date", end_date)
-                        .range(offset, offset + limit - 1)
-                        .execute()
-                    ).data
-                rpa_notes.extend(data)
-                if len(data) < limit:
-                    break
-                offset += limit
-
-        if flexologist_name and not location:
-            while True:
-                if filter_bookings:
-                    data = (
-                        supabase.table("robot_process_automation_notes_records")
-                        .select(
-                            "flexologist_name, location, first_timer, note_score, appointment_date, note_oppurtunities"
-                        )
-                        .eq("config_id", config_id)
-                        .eq("flexologist_name", flexologist_name)
-                        .eq("first_timer", filter_bookings)
-                        .neq("status", "No Show")
-                        .gte("appointment_date", start_date)
-                        .lt("appointment_date", end_date)
-                        .range(offset, offset + limit - 1)
-                        .execute()
-                    ).data
-                else:
-                    data = (
-                        supabase.table("robot_process_automation_notes_records")
-                        .select(
-                            "flexologist_name, location, first_timer, note_score, appointment_date, note_oppurtunities"
-                        )
-                        .eq("config_id", config_id)
-                        .eq("flexologist_name", flexologist_name)
-                        .neq("status", "No Show")
-                        .gte("appointment_date", start_date)
-                        .lt("appointment_date", end_date)
-                        .range(offset, offset + limit - 1)
-                        .execute()
-                    ).data
-                rpa_notes.extend(data)
-                if len(data) < limit:
-                    break
-                offset += limit
-
-        if location and flexologist_name:
-            while True:
-                if filter_bookings:
-                    data = (
-                        supabase.table("robot_process_automation_notes_records")
-                        .select(
-                            "flexologist_name, location, first_timer, note_score, appointment_date, note_oppurtunities"
-                        )
-                        .eq("config_id", config_id)
-                        .eq("location", location)
-                        .eq("flexologist_name", flexologist_name)
-                        .eq("first_timer", filter_bookings)
-                        .neq("status", "No Show")
-                        .gte("appointment_date", start_date)
-                        .lt("appointment_date", end_date)
-                        .range(offset, offset + limit - 1)
-                        .execute()
-                    ).data
-                else:
-                    data = (
-                        supabase.table("robot_process_automation_notes_records")
-                        .select(
-                            "flexologist_name, location, first_timer, note_score, appointment_date, note_oppurtunities"
-                        )
-                        .eq("config_id", config_id)
-                        .eq("location", location)
-                        .eq("flexologist_name", flexologist_name)
-                        .neq("status", "No Show")
-                        .gte("appointment_date", start_date)
-                        .lt("appointment_date", end_date)
-                        .range(offset, offset + limit - 1)
-                        .execute()
-                    ).data
-                rpa_notes.extend(data)
-                if len(data) < limit:
-                    break
-                offset += limit
-
-        if not rpa_notes or len(rpa_notes) == 0:
-            return (
-                jsonify(
-                    {
-                        "status": "success",
-                        "message": "No RPA notes found",
-                        "note_opportunities": [],
-                        "total_quality_notes": 0,
-                        "total_notes": 0,
-                        "total_notes_with_opportunities": 0,
-                        "location": [],
-                        "flexologist": [],
-                    }
-                ),
-                200,
+        while True:
+            # Start building the query
+            query = (
+                supabase.table("robot_process_automation_notes_records")
+                .select(
+                    "flexologist_name, location, first_timer, note_score, "
+                    "appointment_date, note_oppurtunities"
+                )
+                .eq("config_id", config_id)
+                .neq("status", "No Show")
+                .gte("appointment_date", start_date)
+                .lt("appointment_date", end_date)
             )
 
-        locations_with_notes_count = {}
-        flexologist_with_notes_count = {}
-        for note in rpa_notes:
-            if note["location"] not in locations_with_notes_count:
-                locations_with_notes_count[note["location"]] = 0
-            locations_with_notes_count[note["location"]] += 1
-            if note["flexologist_name"].lower() not in flexologist_with_notes_count:
-                flexologist_with_notes_count[note["flexologist_name"].lower()] = 0
-            flexologist_with_notes_count[note["flexologist_name"].lower()] += 1
+            # Add optional filters
+            if filter_bookings:
+                query = query.eq("first_timer", filter_bookings)
+            if location:
+                query = query.eq("location", location)
+            if flexologist_name:
+                query = query.eq("flexologist_name", flexologist_name)
 
-        locations_with_notes_count = dict(
-            sorted(
-                locations_with_notes_count.items(),
-                key=lambda item: item[1],
-                reverse=True,
-            )
-        )
+            # Execute with pagination
+            data = query.range(offset, offset + limit - 1).execute().data
+            rpa_notes.extend(data)
+            
+            if len(data) < limit:
+                break
+            offset += limit
 
-        flexologist_with_notes_count = dict(
-            sorted(
-                flexologist_with_notes_count.items(),
-                key=lambda item: item[1],
-                reverse=True,
-            )
-        )
+        # Early return if no notes
+        if not rpa_notes:
+            return jsonify({
+                "status": "success",
+                "message": "No RPA notes found",
+                "note_opportunities": [],
+                "total_quality_notes": 0,
+                "total_notes": 0,
+                "total_notes_with_opportunities": 0,
+                "location": [],
+                "flexologist": [],
+            }), 200
 
-        # Mapping from old opportunity names to new ones for backward compatibility
+        # Use defaultdict for cleaner counting
+        from collections import defaultdict
+        
+        locations_with_notes_count = defaultdict(int)
+        flexologist_with_notes_count = defaultdict(int)
+        locations_with_opportunity_count = defaultdict(int)
+        flexologist_with_opportunity_count = defaultdict(int)
+        flexologist_notes_percentage_obj = defaultdict(lambda: {"percentage": 0, "total": 0})
+        location_notes_percentage_obj = defaultdict(lambda: {"percentage": 0, "total": 0})
+
+        # Opportunity mapping for backward compatibility
         opportunity_mapping = {
             "Session Note: Problem Presented": "Problem Presented",
             "Session Note: What was worked On": "Current Session Activity",
@@ -268,267 +138,212 @@ def rpa_audit(token):
             "Session Note: Homework": "Homework",
         }
 
-        # Hard coding for now would be better if i add it to the db
+        # Define opportunities based on filter_metric
         if filter_metric in ["first", "all"]:
             opportunities = [
-                "Confirmation Call",
-                "Grip Sock Notice",
-                "Arrive Early",
-                "Location",
-                "Prepaid",
-                "Keynote",
-                "Stated Goal",
-                "Emotional Why",
-                "Prior Solutions",
-                "Routine Captured",
-                "Physical/Medical Issue",
-                "Plan Recommendation",
-                "Problem Presented",
-                "Current Session Activity",
-                "Next Session Focus",
-                "Homework",
+                "Confirmation Call", "Grip Sock Notice", "Arrive Early",
+                "Location", "Prepaid", "Keynote", "Stated Goal",
+                "Emotional Why", "Prior Solutions", "Routine Captured",
+                "Physical/Medical Issue", "Plan Recommendation",
+                "Problem Presented", "Current Session Activity",
+                "Next Session Focus", "Homework",
             ]
         else:
             opportunities = [
-                "Problem Presented",
-                "Current Session Activity",
-                "Next Session Focus",
-                "Homework",
+                "Problem Presented", "Current Session Activity",
+                "Next Session Focus", "Homework",
             ]
 
+        opportunities_count = {opp: 0 for opp in opportunities}
         notes_with_opportunities = []
-        locations_with_opportunity_count = {}
-        flexologist_with_opportunity_count = {}
+        total_quality_notes_percentage_array = []
 
+        # Single pass through all notes
         for note in rpa_notes:
-            if (
-                note["note_oppurtunities"] != "N/A"
-                and note["note_oppurtunities"] != "[]"
-                and note["note_oppurtunities"] != ""
-                and note["note_oppurtunities"] != []
-                and note["note_oppurtunities"] != None
-            ):
+            location_key = note["location"]
+            flexologist_key = note["flexologist_name"].lower()
+            
+            # Count by location and flexologist
+            locations_with_notes_count[location_key] += 1
+            flexologist_with_notes_count[flexologist_key] += 1
+
+            # Calculate quality percentage
+            if note["first_timer"] == "YES":
+                max_score = 18
+            else:
+                max_score = 4
+            
+            if note["note_score"] == "N/A":
+                percentage = 0
+            else:
+                percentage = (int(note["note_score"]) * 100) / max_score
+            
+            total_quality_notes_percentage_array.append(percentage)
+            flexologist_notes_percentage_obj[note["flexologist_name"]]["percentage"] += percentage
+            flexologist_notes_percentage_obj[note["flexologist_name"]]["total"] += 1
+            location_notes_percentage_obj[location_key]["percentage"] += percentage
+            location_notes_percentage_obj[location_key]["total"] += 1
+
+            # Process opportunities
+            note_opps = note["note_oppurtunities"]
+            has_opportunities = (
+                note_opps and 
+                note_opps not in ["N/A", "[]", "", []]
+            )
+            
+            if has_opportunities:
                 notes_with_opportunities.append(note)
-                if note["location"] not in locations_with_opportunity_count:
-                    locations_with_opportunity_count[note["location"]] = 0
-                locations_with_opportunity_count[note["location"]] += 1
-                if (
-                    note["flexologist_name"].lower()
-                    not in flexologist_with_opportunity_count
-                ):
-                    flexologist_with_opportunity_count[
-                        note["flexologist_name"].lower()
-                    ] = 0
-                flexologist_with_opportunity_count[
-                    note["flexologist_name"].lower()
-                ] += 1
+                locations_with_opportunity_count[location_key] += 1
+                flexologist_with_opportunity_count[flexologist_key] += 1
 
-        opportunities_count = {}
-
-        for opportunity in opportunities:
-            opportunities_count[opportunity] = 0
-
-        for note in notes_with_opportunities:
-            lowered_opps = [
-                item.lower()
-                for item in json.loads(note["note_oppurtunities"])
-                if isinstance(item, str)
-            ]
-
-            for opportunity in opportunities:
-                # Check if the new opportunity name is present
-                if opportunity.lower() in lowered_opps:
-                    opportunities_count[opportunity] += 1
-                else:
-                    # Check if any old opportunity names that map to this new one are present
-                    old_names = [
-                        old.lower()
-                        for old, new in opportunity_mapping.items()
-                        if new.lower() == opportunity.lower()
+                # Parse and count opportunities
+                try:
+                    lowered_opps = [
+                        item.lower() 
+                        for item in json.loads(note_opps) 
+                        if isinstance(item, str)
                     ]
-                    if any(old_name.lower() in lowered_opps for old_name in old_names):
-                        opportunities_count[opportunity] += 1
 
+                    for opportunity in opportunities:
+                        opp_lower = opportunity.lower()
+                        # Check new opportunity name
+                        if opp_lower in lowered_opps:
+                            opportunities_count[opportunity] += 1
+                        else:
+                            # Check old opportunity names
+                            old_names = [
+                                old.lower()
+                                for old, new in opportunity_mapping.items()
+                                if new.lower() == opp_lower
+                            ]
+                            if any(old_name in lowered_opps for old_name in old_names):
+                                opportunities_count[opportunity] += 1
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+        # Calculate percentages
+        total_notes = len(rpa_notes)
+        
+        # Opportunity percentages
         for opportunity in opportunities:
             opportunities_count[opportunity] = round(
-                (opportunities_count[opportunity] / len(rpa_notes)) * 100,
-                2,
+                (opportunities_count[opportunity] / total_notes) * 100, 2
             )
 
+        # Location opportunity percentages
         opportunities_count_with_location = {}
-        for location in locations_with_notes_count:
-            if location in locations_with_opportunity_count:
-                opportunities_count_with_location[location] = round(
-                    (
-                        locations_with_opportunity_count[location]
-                        / locations_with_notes_count[location]
-                    )
-                    * 100,
-                    2,
+        for location_key in locations_with_notes_count:
+            if location_key in locations_with_opportunity_count:
+                opportunities_count_with_location[location_key] = round(
+                    (locations_with_opportunity_count[location_key] / 
+                     locations_with_notes_count[location_key]) * 100, 2
                 )
             else:
-                opportunities_count_with_location[location] = 0
+                opportunities_count_with_location[location_key] = 0
 
-        for flexologist in flexologist_with_notes_count:
-            if flexologist in flexologist_with_opportunity_count:
-                flexologist_with_opportunity_count[flexologist] = round(
-                    (
-                        flexologist_with_opportunity_count[flexologist]
-                        / flexologist_with_notes_count[flexologist]
-                    )
-                    * 100,
-                    2,
+        # Flexologist opportunity percentages
+        for flexologist_key in flexologist_with_notes_count:
+            if flexologist_key in flexologist_with_opportunity_count:
+                flexologist_with_opportunity_count[flexologist_key] = round(
+                    (flexologist_with_opportunity_count[flexologist_key] / 
+                     flexologist_with_notes_count[flexologist_key]) * 100, 2
                 )
             else:
-                flexologist_with_opportunity_count[flexologist] = 0
+                flexologist_with_opportunity_count[flexologist_key] = 0
 
-        flexologist_with_opportunity_count = dict(
-            sorted(
-                flexologist_with_opportunity_count.items(),
-                key=lambda item: item[1],
-                reverse=True,
-            )
+        # Sort results
+        sorted_opportunities = sorted(
+            opportunities_count.items(), 
+            key=lambda item: item[1], 
+            reverse=True
         )
 
-        # sorted_opportunities_count_with_location = sorted(
-        #     opportunities_count_with_location.items(),
-        #     key=lambda item: item[1],
-        #     reverse=True,
-        # )
-
-        # sorted_flexologist_with_opportunity_count = sorted(
-        #     flexologist_with_opportunity_count.items(),
-        #     key=lambda item: item[1],
-        #     reverse=True,
-        # )
-
-        opportunities_count = dict(
-            sorted(opportunities_count.items(), key=lambda item: item[1], reverse=True)
-        )
-
-        # total_quality_notes = len(rpa_notes) - len(notes_with_opportunities)
-        total_quality_notes_percentage_array = []
-        flexologist_notes_percentage_obj = {}
-        location_notes_percentage_obj = {}
-        for note in rpa_notes:
-            if note["first_timer"] == "YES":
-                if note["note_score"] == "N/A":
-                    percentage = 0
-                else:
-                    percentage = (int(note["note_score"]) * 100) / 18
-            else:
-                if note["note_score"] == "N/A":
-                    percentage = 0
-                else:
-                    percentage = (int(note["note_score"]) * 100) / 4
-            total_quality_notes_percentage_array.append(percentage)
-            if note["flexologist_name"] not in flexologist_notes_percentage_obj:
-                flexologist_notes_percentage_obj[note["flexologist_name"]] = {
-                    "percentage": 0,
-                    "total": 0,
-                }
-            flexologist_notes_percentage_obj[note["flexologist_name"]][
-                "percentage"
-            ] += percentage
-            flexologist_notes_percentage_obj[note["flexologist_name"]]["total"] += 1
-            if note["location"] not in location_notes_percentage_obj:
-                location_notes_percentage_obj[note["location"]] = {
-                    "percentage": 0,
-                    "total": 0,
-                }
-            location_notes_percentage_obj[note["location"]]["percentage"] += percentage
-            location_notes_percentage_obj[note["location"]]["total"] += 1
-
-        sorted_location_notes_percentage_obj = sorted(
+        sorted_location_notes = sorted(
             location_notes_percentage_obj.items(),
             key=lambda item: (
-                item[1]["percentage"] / item[1]["total"] if item[1]["total"] > 0 else 0
+                item[1]["percentage"] / item[1]["total"] 
+                if item[1]["total"] > 0 else 0
             ),
             reverse=True,
         )
 
-        sorted_flexologist_notes_percentage_obj = sorted(
+        sorted_flexologist_notes = sorted(
             flexologist_notes_percentage_obj.items(),
             key=lambda item: (
-                item[1]["percentage"] / item[1]["total"] if item[1]["total"] > 0 else 0
+                item[1]["percentage"] / item[1]["total"] 
+                if item[1]["total"] > 0 else 0
             ),
             reverse=True,
         )
 
-        total_quality_notes_percentage = sum(
-            total_quality_notes_percentage_array
-        ) / len(total_quality_notes_percentage_array)
-
-        sorted_opportunities = sorted(
-            opportunities_count.items(), key=lambda item: item[1], reverse=True
+        # Calculate total quality percentage
+        total_quality_notes_percentage = (
+            sum(total_quality_notes_percentage_array) / len(total_quality_notes_percentage_array)
+            if total_quality_notes_percentage_array else 0
         )
 
-        return (
-            jsonify(
-                {
-                    "status": "success",
-                    "note_opportunities": [
-                        {"opportunity": opp, "percentage": pct}
-                        for opp, pct in sorted_opportunities
-                    ],
-                    "total_quality_notes": len(rpa_notes),
-                    "total_quality_notes_percentage": round(
-                        (total_quality_notes_percentage)
-                    ),
-                    "total_notes": len(rpa_notes),
-                    "total_notes_with_opportunities": len(notes_with_opportunities),
-                    "total_notes_with_opportunities_percentage": round(
-                        (len(notes_with_opportunities) / len(rpa_notes)) * 100, 2
-                    ),
-                    "location": [
-                        {
-                            "location": loc,
-                            "percentage": (
-                                round(data["percentage"] / data["total"], 2)
-                                if data["total"] > 0
-                                else 0
-                            ),
-                        }
-                        for loc, data in sorted_location_notes_percentage_obj
-                    ],
-                    "flexologist": [
-                        {
-                            "flexologist": flex,
-                            "percentage": (
-                                round(data["percentage"] / data["total"], 2)
-                                if data["total"] > 0
-                                else 0
-                            ),
-                        }
-                        for flex, data in sorted_flexologist_notes_percentage_obj
-                    ],
-                }
+        return jsonify({
+            "status": "success",
+            "note_opportunities": [
+                {"opportunity": opp, "percentage": pct}
+                for opp, pct in sorted_opportunities
+            ],
+            "total_quality_notes": total_notes,
+            "total_quality_notes_percentage": round(total_quality_notes_percentage),
+            "total_notes": total_notes,
+            "total_notes_with_opportunities": len(notes_with_opportunities),
+            "total_notes_with_opportunities_percentage": round(
+                (len(notes_with_opportunities) / total_notes) * 100, 2
             ),
-            200,
-        )
+            "location": [
+                {
+                    "location": loc,
+                    "percentage": (
+                        round(data["percentage"] / data["total"], 2)
+                        if data["total"] > 0 else 0
+                    ),
+                }
+                for loc, data in sorted_location_notes
+            ],
+            "flexologist": [
+                {
+                    "flexologist": flex,
+                    "percentage": (
+                        round(data["percentage"] / data["total"], 2)
+                        if data["total"] > 0 else 0
+                    ),
+                }
+                for flex, data in sorted_flexologist_notes
+            ],
+        }), 200
 
     except Exception as e:
         logging.error(f"Error in POST api/admin/analytics/rpa_audit: {str(e)}")
         return jsonify({"error": str(e), "status": "error"}), 500
-
 
 @routes.route("/get_rpa_audit_details", methods=["POST"])
 @require_bearer_token
 def get_rpa_audit_details(token):
     try:
         user_data = decode_jwt_token(token)
-        user_id = (
+        
+        # Get user's admin_id
+        user_info = (
             supabase.table("users")
             .select("admin_id")
             .eq("id", user_data["user_id"])
+            .single()
             .execute()
-        ).data[0]["admin_id"]
+        )
+        user_id = user_info.data["admin_id"]
+        
         data = request.json
         opportunity = data["opportunity"]
         duration = data["duration"]
-        location = data.get("location", None)
-        flexologist_name = data.get("flexologist_name", None)
+        location = data.get("location")
+        flexologist_name = data.get("flexologist_name")
 
+        # Get date range
         if duration == "custom":
             start_date_str = data["start_date"]
             end_date_str = data["end_date"]
@@ -541,162 +356,63 @@ def get_rpa_audit_details(token):
         if not start_date or not end_date:
             return jsonify({"error": "Invalid duration", "status": "error"}), 400
 
-        config_id = (
+        # Get config_id
+        config_result = (
             supabase.table("robot_process_automation_config")
             .select("id")
             .eq("admin_id", user_id)
+            .single()
             .execute()
-        ).data
+        )
 
-        print(start_date, end_date)
-
-        if not config_id:
+        if not config_result.data:
             return jsonify({"error": "No RPA config found", "status": "error"}), 400
 
-        config_id = config_id[0]["id"]
+        config_id = config_result.data["id"]
+
+        # Build query dynamically - NO CODE DUPLICATION
         rpa_notes = []
         offset = 0
         limit = 1000
-        if not location and not flexologist_name:
-            while True:
-                data = (
-                    supabase.table("robot_process_automation_notes_records")
-                    .select(
-                        "flexologist_name, location, first_timer, note_score, appointment_date, note_oppurtunities"
-                    )
-                    .eq("config_id", config_id)
-                    .neq("status", "No Show")
-                    .gte("appointment_date", start_date)
-                    .lt("appointment_date", end_date)
-                    .range(offset, offset + limit - 1)
-                    .execute()
-                ).data
-                rpa_notes.extend(data)
-                if len(data) < limit:
-                    break
-                offset += limit
 
-        if location and not flexologist_name:
-            while True:
-                data = (
-                    supabase.table("robot_process_automation_notes_records")
-                    .select(
-                        "flexologist_name, location, first_timer, note_score, appointment_date, note_oppurtunities"
-                    )
-                    .eq("config_id", config_id)
-                    .eq("location", location)
-                    .neq("status", "No Show")
-                    .gte("appointment_date", start_date)
-                    .lt("appointment_date", end_date)
-                    .range(offset, offset + limit - 1)
-                    .execute()
-                ).data
-                rpa_notes.extend(data)
-                if len(data) < limit:
-                    break
-                offset += limit
-
-        if flexologist_name and not location:
-            while True:
-                data = (
-                    supabase.table("robot_process_automation_notes_records")
-                    .select(
-                        "flexologist_name, location, first_timer, note_score, appointment_date, note_oppurtunities"
-                    )
-                    .eq("config_id", config_id)
-                    .eq("flexologist_name", flexologist_name)
-                    .neq("status", "No Show")
-                    .gte("appointment_date", start_date)
-                    .lt("appointment_date", end_date)
-                    .range(offset, offset + limit - 1)
-                    .execute()
-                ).data
-                rpa_notes.extend(data)
-                if len(data) < limit:
-                    break
-                offset += limit
-
-        if location and flexologist_name:
-            while True:
-                data = (
-                    supabase.table("robot_process_automation_notes_records")
-                    .select(
-                        "flexologist_name, location, first_timer, note_score, appointment_date, note_oppurtunities"
-                    )
-                    .eq("config_id", config_id)
-                    .eq("flexologist_name", flexologist_name)
-                    .eq("location", location)
-                    .neq("status", "No Show")
-                    .gte("appointment_date", start_date)
-                    .lt("appointment_date", end_date)
-                    .range(offset, offset + limit - 1)
-                    .execute()
-                ).data
-                rpa_notes.extend(data)
-                if len(data) < limit:
-                    break
-                offset += limit
-
-        if not rpa_notes or len(rpa_notes) == 0:
-            return (
-                jsonify(
-                    {
-                        "status": "success",
-                        "message": "No RPA notes found",
-                        "location": [],
-                        "flexologist": [],
-                    }
-                ),
-                200,
+        while True:
+            # Build query with optional filters
+            query = (
+                supabase.table("robot_process_automation_notes_records")
+                .select(
+                    "flexologist_name, location, first_timer, note_score, "
+                    "appointment_date, note_oppurtunities"
+                )
+                .eq("config_id", config_id)
+                .neq("status", "No Show")
+                .gte("appointment_date", start_date)
+                .lt("appointment_date", end_date)
             )
 
-        print(len(rpa_notes))
+            # Add optional filters
+            if location:
+                query = query.eq("location", location)
+            if flexologist_name:
+                query = query.eq("flexologist_name", flexologist_name)
 
-        notes_with_opportunities = []
-        locations_with_opportunity_count = {}
-        flexologist_with_opportunity_count = {}
+            # Execute with pagination
+            data_batch = query.range(offset, offset + limit - 1).execute().data
+            rpa_notes.extend(data_batch)
+            
+            if len(data_batch) < limit:
+                break
+            offset += limit
 
-        total_location_notes = {}
-        total_flexologist_note = {}
+        # Early return if no notes
+        if not rpa_notes:
+            return jsonify({
+                "status": "success",
+                "message": "No RPA notes found",
+                "location": [],
+                "flexologist": [],
+            }), 200
 
-        for note in rpa_notes:
-            if (
-                note["note_oppurtunities"] != "N/A"
-                and note["note_oppurtunities"] != "[]"
-                and note["note_oppurtunities"] != ""
-                and note["note_oppurtunities"] != []
-                and note["note_oppurtunities"] != None
-            ):
-                notes_with_opportunities.append(note)
-                if note["location"] not in locations_with_opportunity_count:
-                    locations_with_opportunity_count[note["location"]] = 0
-
-                locations_with_opportunity_count[note["location"]] += 1
-                if note["location"] not in total_location_notes:
-                    total_location_notes[note["location"]] = 0
-                total_location_notes[note["location"]] += 1
-                if (
-                    note["flexologist_name"].lower()
-                    not in flexologist_with_opportunity_count
-                ):
-                    flexologist_with_opportunity_count[
-                        note["flexologist_name"].lower()
-                    ] = 0
-                flexologist_with_opportunity_count[
-                    note["flexologist_name"].lower()
-                ] += 1
-                if note["flexologist_name"] not in total_flexologist_note:
-                    total_flexologist_note[note["flexologist_name"]] = 0
-                total_flexologist_note[note["flexologist_name"]] += 1
-            else:
-                if note["location"] not in total_location_notes:
-                    total_location_notes[note["location"]] = 0
-                total_location_notes[note["location"]] += 1
-                if note["flexologist_name"] not in total_flexologist_note:
-                    total_flexologist_note[note["flexologist_name"]] = 0
-                total_flexologist_note[note["flexologist_name"]] += 1
-
-        # Mapping from old opportunity names to new ones for backward compatibility
+        # Opportunity mapping for backward compatibility
         opportunity_mapping = {
             "Session Note: Problem Presented": "Problem Presented",
             "Session Note: What was worked On": "Current Session Activity",
@@ -705,210 +421,144 @@ def get_rpa_audit_details(token):
             "Session Note: Homework": "Homework",
         }
 
-        notes_with_particular_opportunity = []
-        locations_with_particular_opportunity_count = {}
-        flexologist_with_particular_opportunity_count = {}
+        # Pre-compute old names for the requested opportunity
+        opportunity_lower = opportunity.lower()
+        old_names = [
+            old.lower()
+            for old, new in opportunity_mapping.items()
+            if new.lower() == opportunity_lower
+        ]
 
-        for note in notes_with_opportunities:
-            lowered_opps = [
-                item.lower()
-                for item in json.loads(note["note_oppurtunities"])
-                if isinstance(item, str)
-            ]
+        # Use defaultdict for cleaner counting
+        from collections import defaultdict
+        
+        locations_with_opportunity_count = defaultdict(int)
+        flexologist_with_opportunity_count = defaultdict(int)
+        total_location_notes = defaultdict(int)
+        total_flexologist_notes = defaultdict(int)
+        
+        locations_with_particular_opportunity_count = defaultdict(int)
+        flexologist_with_particular_opportunity_count = defaultdict(int)
+        
+        # Quality score tracking
+        location_quality_scores = defaultdict(list)
+        flexologist_quality_scores = defaultdict(list)
 
-            # Check if the requested opportunity (new name) is present, or any old names that map to it
-            opportunity_found = opportunity.lower() in lowered_opps
-            if not opportunity_found:
-                # Check if any old opportunity names that map to this new one are present
-                old_names = [
-                    old.lower()
-                    for old, new in opportunity_mapping.items()
-                    if new.lower() == opportunity.lower()
-                ]
-                opportunity_found = any(
-                    old_name.lower() in lowered_opps for old_name in old_names
-                )
+        # Single pass through all notes
+        for note in rpa_notes:
+            location_key = note["location"]
+            flexologist_key = note["flexologist_name"].lower()
+            flexologist_display_key = note["flexologist_name"]
+            
+            # Count all notes by location and flexologist
+            total_location_notes[location_key] += 1
+            total_flexologist_notes[flexologist_display_key] += 1
 
-            if opportunity_found:
-                notes_with_particular_opportunity.append(note)
-                if note["location"] not in locations_with_particular_opportunity_count:
-                    locations_with_particular_opportunity_count[note["location"]] = 0
-                locations_with_particular_opportunity_count[note["location"]] += 1
-                if (
-                    note["flexologist_name"].lower()
-                    not in flexologist_with_particular_opportunity_count
-                ):
-                    flexologist_with_particular_opportunity_count[
-                        note["flexologist_name"].lower()
-                    ] = 0
-                flexologist_with_particular_opportunity_count[
-                    note["flexologist_name"].lower()
-                ] += 1
-
-        locations_with_particular_opportunity_percentage = {}
-        flexologist_with_particular_opportunity_percentage = {}
-
-        for location in locations_with_opportunity_count:
-            if location in locations_with_particular_opportunity_count:
-                locations_with_particular_opportunity_percentage[location] = round(
-                    (
-                        locations_with_particular_opportunity_count[location]
-                        / locations_with_opportunity_count[location]
-                    )
-                    * 100,
-                    2,
-                )
+            # Calculate quality score
+            max_score = 18 if note["first_timer"] == "YES" else 4
+            if note["note_score"] == "N/A":
+                percentage = 0
             else:
-                locations_with_particular_opportunity_percentage[location] = 0
+                percentage = (int(note["note_score"]) * 100) / max_score
+            
+            location_quality_scores[location_key].append(percentage)
+            flexologist_quality_scores[flexologist_display_key].append(percentage)
 
-        for flexologist in flexologist_with_opportunity_count:
-            if flexologist in flexologist_with_particular_opportunity_count:
-                flexologist_with_particular_opportunity_percentage[flexologist] = round(
-                    (
-                        flexologist_with_particular_opportunity_count[flexologist]
-                        / flexologist_with_opportunity_count[flexologist]
+            # Check if note has opportunities
+            note_opps = note["note_oppurtunities"]
+            has_opportunities = (
+                note_opps and 
+                note_opps not in ["N/A", "[]", "", []]
+            )
+            
+            if has_opportunities:
+                locations_with_opportunity_count[location_key] += 1
+                flexologist_with_opportunity_count[flexologist_key] += 1
+
+                # Parse opportunities and check for the specific one
+                try:
+                    lowered_opps = [
+                        item.lower() 
+                        for item in json.loads(note_opps) 
+                        if isinstance(item, str)
+                    ]
+
+                    # Check if requested opportunity is present (new name or old names)
+                    opportunity_found = (
+                        opportunity_lower in lowered_opps or
+                        any(old_name in lowered_opps for old_name in old_names)
                     )
-                    * 100,
-                    2,
-                )
+
+                    if opportunity_found:
+                        locations_with_particular_opportunity_count[location_key] += 1
+                        flexologist_with_particular_opportunity_count[flexologist_key] += 1
+                        
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+        # Calculate percentages for locations
+        location_results = []
+        for location_key in locations_with_opportunity_count:
+            particular_count = locations_with_particular_opportunity_count.get(location_key, 0)
+            opportunity_count = locations_with_opportunity_count[location_key]
+            total_count = total_location_notes[location_key]
+            
+            if opportunity_count > 0:
+                percentage = round((particular_count / opportunity_count) * 100, 2)
             else:
-                flexologist_with_particular_opportunity_percentage[flexologist] = 0
+                percentage = 0
+            
+            percentage_note_quality = round((particular_count / total_count) * 100, 2) if total_count > 0 else 0
+            
+            location_results.append({
+                "location": location_key,
+                "percentage": percentage,
+                "particular_count": particular_count,
+                "total_count": total_count,
+                "percentage_note_quality": percentage_note_quality,
+            })
 
-        locations_with_particular_opportunity_percentage = dict(
-            sorted(
-                locations_with_particular_opportunity_percentage.items(),
-                key=lambda item: item[1],
-                reverse=True,
-            )
-        )
+        # Sort locations by percentage
+        location_results.sort(key=lambda x: x["percentage"], reverse=True)
 
-        sorted_locations_with_particular_opportunity_percentage = sorted(
-            locations_with_particular_opportunity_percentage.items(),
-            key=lambda item: item[1],
-            reverse=True,
-        )
-
-        flexologist_with_particular_opportunity_percentage = dict(
-            sorted(
-                flexologist_with_particular_opportunity_percentage.items(),
-                key=lambda item: item[1],
-                reverse=True,
-            )
-        )
-
-        sorted_flexologist_with_particular_opportunity_percentage = sorted(
-            flexologist_with_particular_opportunity_percentage.items(),
-            key=lambda item: item[1],
-            reverse=True,
-        )
-
-        def get_total_quality_location_notes_percentage(location):
-            total_quality_location_notes_percentage_array = []
+        # Calculate percentages for flexologists
+        flexologist_results = []
+        for flexologist_key in flexologist_with_opportunity_count:
+            particular_count = flexologist_with_particular_opportunity_count.get(flexologist_key, 0)
+            opportunity_count = flexologist_with_opportunity_count[flexologist_key]
+            
+            # Find the display name (with proper casing)
+            flexologist_display_name = None
             for note in rpa_notes:
-                if note["location"] == location:
-                    if note["first_timer"] == "YES":
-                        if note["note_score"] == "N/A":
-                            percentage = 0
-                        else:
-                            percentage = (int(note["note_score"]) * 100) / 18
-                    else:
-                        if note["note_score"] == "N/A":
-                            percentage = 0
-                        else:
-                            percentage = (int(note["note_score"]) * 100) / 4
-                    total_quality_location_notes_percentage_array.append(percentage)
-            return sum(total_quality_location_notes_percentage_array) / len(
-                total_quality_location_notes_percentage_array
-            )
+                if note["flexologist_name"].lower() == flexologist_key:
+                    flexologist_display_name = note["flexologist_name"]
+                    break
+            
+            total_count = total_flexologist_notes.get(flexologist_display_name, 0)
+            
+            if opportunity_count > 0:
+                percentage = round((particular_count / opportunity_count) * 100, 2)
+            else:
+                percentage = 0
+            
+            percentage_note_quality = round((particular_count / total_count) * 100, 2) if total_count > 0 else 0
+            
+            flexologist_results.append({
+                "flexologist": flexologist_key,
+                "percentage": percentage,
+                "particular_count": particular_count,
+                "total_count": total_count,
+                "percentage_note_quality": percentage_note_quality,
+            })
 
-        def get_total_quality_flexologist_notes_percentage(flexologist):
-            total_quality_flexologist_notes_percentage_array = []
-            for note in rpa_notes:
-                if note["flexologist_name"] == flexologist:
-                    if note["first_timer"] == "YES":
-                        if note["note_score"] == "N/A":
-                            percentage = 0
-                        else:
-                            percentage = (int(note["note_score"]) * 100) / 18
-                    else:
-                        if note["note_score"] == "N/A":
-                            percentage = 0
-                        else:
-                            percentage = (int(note["note_score"]) * 100) / 4
-                    total_quality_flexologist_notes_percentage_array.append(percentage)
-            return sum(total_quality_flexologist_notes_percentage_array) / len(
-                total_quality_flexologist_notes_percentage_array
-            )
+        # Sort flexologists by percentage
+        flexologist_results.sort(key=lambda x: x["percentage"], reverse=True)
 
-        return (
-            jsonify(
-                {
-                    "status": "success",
-                    "location": [
-                        {
-                            "location": location,
-                            "percentage": percentage,
-                            "particular_count": locations_with_particular_opportunity_count.get(
-                                location, 0
-                            ),
-                            "total_count": total_location_notes.get(location, 0),
-                            # "total_count": locations_with_opportunity_count.get(
-                            #     location, 0
-                            # ),
-                            "percentage_note_quality": round(
-                                (
-                                    (
-                                        locations_with_particular_opportunity_count.get(
-                                            location, 0
-                                        )
-                                    )
-                                    / total_location_notes.get(location, 0)
-                                )
-                                * 100,
-                                2,
-                            ),
-                            # "percentage_note_quality": round(
-                            #     get_total_quality_location_notes_percentage(location), 2
-                            # ),
-                        }
-                        for location, percentage in sorted_locations_with_particular_opportunity_percentage
-                    ],
-                    "flexologist": [
-                        {
-                            "flexologist": flexologist,
-                            "percentage": percentage,
-                            "particular_count": flexologist_with_particular_opportunity_count.get(
-                                flexologist, 0
-                            ),
-                            "total_count": total_flexologist_note.get(flexologist, 0),
-                            # "total_count": flexologist_with_opportunity_count.get(
-                            #     flexologist, 0
-                            # ),
-                            "percentage_note_quality": round(
-                                (
-                                    (
-                                        flexologist_with_particular_opportunity_count.get(
-                                            flexologist, 0
-                                        )
-                                    )
-                                    / total_flexologist_note.get(flexologist, 0)
-                                )
-                                * 100,
-                                2,
-                            ),
-                            # "percentage_note_quality": round(
-                            #     get_total_quality_flexologist_notes_percentage(
-                            #         flexologist
-                            #     ),
-                            #     2,
-                            # ),
-                        }
-                        for flexologist, percentage in sorted_flexologist_with_particular_opportunity_percentage
-                    ],
-                }
-            ),
-            200,
-        )
+        return jsonify({
+            "status": "success",
+            "location": location_results,
+            "flexologist": flexologist_results,
+        }), 200
 
     except Exception as e:
         logging.error(
@@ -922,17 +572,23 @@ def get_rpa_audit_details(token):
 def get_ranking_analytics(token):
     try:
         user_data = decode_jwt_token(token)
-        user_id = (
+        
+        # Get user's admin_id
+        user_info = (
             supabase.table("users")
             .select("admin_id")
             .eq("id", user_data["user_id"])
+            .single()
             .execute()
-        ).data[0]["admin_id"]
+        )
+        user_id = user_info.data["admin_id"]
+        
         data = request.json
-        # rank_by = data.get("rank_by", "location")
         metric = data.get("metric", "total_visits")
         filter_metric = data.get("filter_metric", "all")
         duration = data["duration"]
+        
+        # Get date range
         if duration == "custom":
             start_date_str = data["start_date"]
             end_date_str = data["end_date"]
@@ -945,125 +601,108 @@ def get_ranking_analytics(token):
         if not start_date or not end_date:
             return jsonify({"error": "Invalid duration", "status": "error"}), 400
 
-        config_id = (
+        # Get config_id
+        config_result = (
             supabase.table("robot_process_automation_config")
             .select("id")
             .eq("admin_id", user_id)
+            .single()
             .execute()
-        ).data
-        if not config_id:
+        )
+        
+        if not config_result.data:
             return jsonify({"error": "No RPA config found", "status": "error"}), 400
-        config_id = config_id[0]["id"]
+        
+        config_id = config_result.data["id"]
 
+        # ===== METRIC: total_client_visits =====
         if metric == "total_client_visits":
-            first = metric == "total_client_visits" and filter_metric == "first"
-            subsequent = (
-                metric == "total_client_visits" and filter_metric == "subsequent"
-            )
-            get_all = metric == "total_client_visits" and filter_metric == "all"
-            first_timer = "YES" if first else "NO"
+            # Determine filter
+            first_timer_filter = None
+            if filter_metric == "first":
+                first_timer_filter = "YES"
+            elif filter_metric == "subsequent":
+                first_timer_filter = "NO"
+            
+            # Fetch notes with dynamic query
+            rpa_notes = []
             offset = 0
             limit = 1000
-            rpa_notes = []
-            if first or subsequent:
-                while True:
-                    data = (
-                        supabase.table("robot_process_automation_notes_records")
-                        .select("flexologist_name, location")
-                        .eq("config_id", config_id)
-                        .eq("first_timer", first_timer)
-                        .neq("status", "No Show")
-                        .gte("appointment_date", start_date)
-                        .lt("appointment_date", end_date)
-                        .range(offset, offset + limit - 1)
-                        .execute()
-                    ).data
-                    rpa_notes.extend(data)
-                    if len(data) < limit:
-                        break
-                    offset += limit
-            elif get_all:
-                while True:
-                    data = (
-                        supabase.table("robot_process_automation_notes_records")
-                        .select("flexologist_name, location")
-                        .eq("config_id", config_id)
-                        .neq("status", "No Show")
-                        .gte("appointment_date", start_date)
-                        .lt("appointment_date", end_date)
-                        .range(offset, offset + limit - 1)
-                        .execute()
-                    ).data
-                    rpa_notes.extend(data)
-                    if len(data) < limit:
-                        break
-                    offset += limit
+            
+            while True:
+                query = (
+                    supabase.table("robot_process_automation_notes_records")
+                    .select("flexologist_name, location")
+                    .eq("config_id", config_id)
+                    .neq("status", "No Show")
+                    .gte("appointment_date", start_date)
+                    .lt("appointment_date", end_date)
+                )
+                
+                if first_timer_filter:
+                    query = query.eq("first_timer", first_timer_filter)
+                
+                data_batch = query.range(offset, offset + limit - 1).execute().data
+                rpa_notes.extend(data_batch)
+                
+                if len(data_batch) < limit:
+                    break
+                offset += limit
 
             if not rpa_notes:
-                return (
-                    jsonify(
-                        {
-                            "status": "success",
-                            "message": "No notes found",
-                            "data": [],
-                            "data_flex": [],
-                            "metric": metric,
-                        }
-                    ),
-                    200,
-                )
-            # filter_by = "location" if rank_by == "location" else "flexologist_name"
-            count = {}
-            count_flex = {}
+                return jsonify({
+                    "status": "success",
+                    "message": "No notes found",
+                    "data": [],
+                    "data_flex": [],
+                    "metric": metric,
+                }), 200
+            
+            # Count by location and flexologist
+            from collections import defaultdict
+            count_location = defaultdict(int)
+            count_flex = defaultdict(int)
+            
             for note in rpa_notes:
-                if note["location"] not in count:
-                    count[note["location"]] = 0
-                count[note["location"]] += 1
-                if note["flexologist_name"] not in count_flex:
-                    count_flex[note["flexologist_name"]] = 0
+                count_location[note["location"]] += 1
                 count_flex[note["flexologist_name"]] += 1
 
-            count = dict(
-                sorted(
-                    count.items(),
-                    key=lambda item: item[1],
-                    reverse=True,
-                )
+            # Sort and format
+            sorted_locations = sorted(
+                count_location.items(),
+                key=lambda item: item[1],
+                reverse=True,
             )
-
-            count_flex = dict(
-                sorted(
-                    count_flex.items(),
-                    key=lambda item: item[1],
-                    reverse=True,
-                )
+            sorted_flex = sorted(
+                count_flex.items(),
+                key=lambda item: item[1],
+                reverse=True,
             )
+            
+            total_notes = len(rpa_notes)
+            
+            return jsonify({
+                "status": "success",
+                "data": [
+                    {"name": name, "count": count, "total": total_notes}
+                    for name, count in sorted_locations
+                ],
+                "data_flex": [
+                    {"name": name, "count": count, "total": total_notes}
+                    for name, count in sorted_flex
+                ],
+                "metric": metric,
+            }), 200
 
-            return (
-                jsonify(
-                    {
-                        "status": "success",
-                        "data": [
-                            {"name": item, "count": count, "total": len(rpa_notes)}
-                            for item, count in count.items()
-                        ],
-                        "data_flex": [
-                            {"name": item, "count": count, "total": len(rpa_notes)}
-                            for item, count in count_flex.items()
-                        ],
-                        "metric": metric,
-                    }
-                ),
-                200,
-            )
-
+        # ===== METRIC: percentage_app_submission =====
         if metric == "percentage_app_submission":
+            # Fetch all RPA notes
+            all_notes = []
             offset = 0
             limit = 1000
-            all_notes = []
-            app_submitted = []
+            
             while True:
-                data = (
+                data_batch = (
                     supabase.table("robot_process_automation_notes_records")
                     .select("location, flexologist_name")
                     .eq("config_id", config_id)
@@ -1073,23 +712,22 @@ def get_ranking_analytics(token):
                     .range(offset, offset + limit - 1)
                     .execute()
                 ).data
-                all_notes.extend(data)
-                if len(data) < limit:
+                all_notes.extend(data_batch)
+                
+                if len(data_batch) < limit:
                     break
                 offset += limit
+            
             if not all_notes:
-                return (
-                    jsonify(
-                        {
-                            "status": "success",
-                            "message": "No notes found",
-                            "data": [],
-                            "metric": metric,
-                        }
-                    ),
-                    200,
-                )
+                return jsonify({
+                    "status": "success",
+                    "message": "No notes found",
+                    "data": [],
+                    "data_flex": [],
+                    "metric": metric,
+                }), 200
 
+            # Get all flexologists
             flexologists = (
                 supabase.table("users")
                 .select("id")
@@ -1097,349 +735,211 @@ def get_ranking_analytics(token):
                 .eq("role_id", 3)
                 .execute()
             ).data
+            
             if not flexologists:
-                return (
-                    jsonify(
-                        {
-                            "status": "success",
-                            "message": "No flexologists found",
-                            "data": [],
-                            "metric": metric,
-                        }
-                    ),
-                    200,
-                )
+                return jsonify({
+                    "status": "success",
+                    "message": "No flexologists found",
+                    "data": [],
+                    "data_flex": [],
+                    "metric": metric,
+                }), 200
 
-            for flexologist in flexologists:
-                offset = 0
-                limit = 1000
-                while True:
-                    app_submitted_by_flexologist = (
-                        supabase.table("clubready_bookings")
-                        .select("location, flexologist_name")
-                        .eq("user_id", flexologist["id"])
-                        .eq("submitted", True)
-                        .gte("created_at", start_date)
-                        .lt("created_at", end_date)
-                        .range(offset, offset + limit - 1)
-                        .execute()
-                        .data
-                    )
-                    app_submitted.extend(app_submitted_by_flexologist)
-                    if len(app_submitted_by_flexologist) < limit:
-                        break
-                    offset += limit
+            # Fetch ALL app submissions in ONE query (instead of N queries)
+            flexologist_ids = [f["id"] for f in flexologists]
+            app_submitted = []
+            offset = 0
+            limit = 1000
+            
+            while True:
+                submitted_batch = (
+                    supabase.table("clubready_bookings")
+                    .select("location, flexologist_name")
+                    .in_("user_id", flexologist_ids)
+                    .eq("submitted", True)
+                    .gte("created_at", start_date)
+                    .lt("created_at", end_date)
+                    .range(offset, offset + limit - 1)
+                    .execute()
+                ).data
+                app_submitted.extend(submitted_batch)
+                
+                if len(submitted_batch) < limit:
+                    break
+                offset += limit
 
-            total_visits_per_location = {}
-            total_visits_per_flex = {}
+            # Count visits and submissions
+            from collections import defaultdict
+            total_visits_per_location = defaultdict(int)
+            total_visits_per_flex = defaultdict(int)
+            submitted_per_location = defaultdict(int)
+            submitted_per_flex = defaultdict(int)
+            
             for note in all_notes:
                 loc = note["location"]
-                flex = (
-                    note["flexologist_name"].lower() if note["flexologist_name"] else ""
-                )
-                total_visits_per_location[loc] = (
-                    total_visits_per_location.get(loc, 0) + 1
-                )
-                total_visits_per_flex[flex] = total_visits_per_flex.get(flex, 0) + 1
-            submitted_per_location = {}
-            submitted_per_flex = {}
+                flex = note["flexologist_name"].lower() if note.get("flexologist_name") else ""
+                total_visits_per_location[loc] += 1
+                total_visits_per_flex[flex] += 1
+            
             for sub in app_submitted:
                 loc = sub["location"].lower()
-                flex = (
-                    sub["flexologist_name"].lower() if sub["flexologist_name"] else ""
-                )
-                submitted_per_location[loc] = submitted_per_location.get(loc, 0) + 1
-                submitted_per_flex[flex] = submitted_per_flex.get(flex, 0) + 1
+                flex = sub["flexologist_name"].lower() if sub.get("flexologist_name") else ""
+                submitted_per_location[loc] += 1
+                submitted_per_flex[flex] += 1
+            
+            # Calculate percentages
             location_percentages = {}
             for loc in total_visits_per_location:
                 sub = submitted_per_location.get(loc, 0)
                 total = total_visits_per_location[loc]
                 pct = round((sub / total) * 100, 2) if total > 0 else 0
                 location_percentages[loc] = {"pct": pct, "total": total}
-            sorted_locations = sorted(
-                location_percentages.items(),
-                key=lambda item: item[1]["pct"],
-                reverse=True,
-            )
-
+            
             flex_percentages = {}
             for flex in total_visits_per_flex:
                 sub = submitted_per_flex.get(flex, 0)
                 total = total_visits_per_flex[flex]
                 pct = round((sub / total) * 100, 2) if total > 0 else 0
                 flex_percentages[flex] = {"pct": pct, "total": total}
-            sorted_flex = sorted(
-                flex_percentages.items(), key=lambda item: item[1]["pct"], reverse=True
+            
+            # Sort results
+            sorted_locations = sorted(
+                location_percentages.items(),
+                key=lambda item: item[1]["pct"],
+                reverse=True,
             )
-
+            sorted_flex = sorted(
+                flex_percentages.items(),
+                key=lambda item: item[1]["pct"],
+                reverse=True,
+            )
+            
             # Calculate overall percentage
             total_robot_bookings = len(all_notes)
             total_app_submitted = len(app_submitted)
             overall_percentage = round(
-                (
-                    (total_app_submitted / total_robot_bookings * 100)
-                    if total_robot_bookings > 0
-                    else 0
-                ),
+                (total_app_submitted / total_robot_bookings * 100)
+                if total_robot_bookings > 0
+                else 0,
                 2,
             )
 
-            # if rank_by == "location":
-            #     data = [{"name": loc, "count": pct} for loc, pct in sorted_locations]
-            # else:
-            #     data = [{"name": flex, "count": pct} for flex, pct in sorted_flex]
-            data = [
-                {"name": loc, "count": data_dict["pct"], "total": data_dict["total"]}
-                for loc, data_dict in sorted_locations
-            ]
-            data_flex = [
-                {"name": flex, "count": data_dict["pct"], "total": data_dict["total"]}
-                for flex, data_dict in sorted_flex
-            ]
+            return jsonify({
+                "status": "success",
+                "data": [
+                    {"name": loc, "count": data_dict["pct"], "total": data_dict["total"]}
+                    for loc, data_dict in sorted_locations
+                ],
+                "data_flex": [
+                    {"name": flex, "count": data_dict["pct"], "total": data_dict["total"]}
+                    for flex, data_dict in sorted_flex
+                ],
+                "metric": metric,
+                "overall_percentage": overall_percentage,
+            }), 200
 
-            # Add overall percentage to data or response
-            return (
-                jsonify(
-                    {
-                        "status": "success",
-                        "data": data,
-                        "data_flex": data_flex,
-                        "metric": metric,
-                        "overall_percentage": overall_percentage,
-                    }
-                ),
-                200,
-            )
-
-        first = metric == "note_quality_percentage" and filter_metric == "first"
-        subsequent = (
-            metric == "note_quality_percentage" and filter_metric == "subsequent"
-        )
-        get_all = metric == "note_quality_percentage" and filter_metric == "all"
-
-        if first or subsequent:
-            first_timer = "YES" if first else "NO"
+        # ===== METRIC: note_quality_percentage =====
+        if metric == "note_quality_percentage":
+            # Determine filter
+            first_timer_filter = None
+            if filter_metric == "first":
+                first_timer_filter = "YES"
+            elif filter_metric == "subsequent":
+                first_timer_filter = "NO"
+            
+            # Fetch notes
+            all_notes = []
             offset = 0
             limit = 1000
-            all_notes = []
+            
             while True:
-                data = (
-                    supabase.table("robot_process_automation_notes_records")
-                    .select("location, flexologist_name, note_score, first_timer")
-                    .eq("config_id", config_id)
-                    .eq("first_timer", first_timer)
-                    .neq("status", "No Show")
-                    .gte("appointment_date", start_date)
-                    .lt("appointment_date", end_date)
-                    .range(offset, offset + limit - 1)
-                    .execute()
-                ).data
-                all_notes.extend(data)
-                if len(data) < limit:
-                    break
-                offset += limit
-
-            if not all_notes:
-                return (
-                    jsonify(
-                        {
-                            "status": "success",
-                            "data": [],
-                            "metric": metric,
-                        }
-                    ),
-                    200,
-                )
-
-            # filter_by = "location" if rank_by == "location" else "flexologist_name"
-
-            group_sums = {}
-            group_counts = {}
-            group_sums_flex = {}
-            group_counts_flex = {}
-            for booking in all_notes:
-                score = (
-                    int(booking["note_score"]) if booking["note_score"] != "N/A" else 0
-                )
-                percentage = round(
-                    (score / (16.0 if booking["first_timer"] == "YES" else 4.0)) * 100,
-                    2,
-                )
-                group_key = (
-                    booking["location"]
-                    # if filter_by == "flexologist_name"
-                    # else booking[filter_by]
-                )
-                group_key_flex = booking["flexologist_name"].lower()
-                group_sums[group_key] = group_sums.get(group_key, 0) + percentage
-                group_counts[group_key] = group_counts.get(group_key, 0) + 1
-                group_sums_flex[group_key_flex] = (
-                    group_sums_flex.get(group_key_flex, 0) + percentage
-                )
-                group_counts_flex[group_key_flex] = (
-                    group_counts_flex.get(group_key_flex, 0) + 1
-                )
-
-            averages = {}
-            for key in group_sums:
-                averages[key] = {
-                    "avg": (
-                        round(group_sums[key] / group_counts[key], 2)
-                        if group_counts[key] > 0
-                        else 0
-                    ),
-                    "total": group_counts[key],
-                }
-
-            averages_flex = {}
-            for key in group_sums_flex:
-                averages_flex[key] = {
-                    "avg": (
-                        round(group_sums_flex[key] / group_counts_flex[key], 2)
-                        if group_counts_flex[key] > 0
-                        else 0
-                    ),
-                    "total": group_counts_flex[key],
-                }
-
-            sorted_averages = sorted(
-                averages.items(), key=lambda item: item[1]["avg"], reverse=True
-            )
-            sorted_averages_flex = sorted(
-                averages_flex.items(), key=lambda item: item[1]["avg"], reverse=True
-            )
-
-            data = [
-                {"name": name, "count": data_dict["avg"], "total": data_dict["total"]}
-                for name, data_dict in sorted_averages
-            ]
-            data_flex = [
-                {"name": name, "count": data_dict["avg"], "total": data_dict["total"]}
-                for name, data_dict in sorted_averages_flex
-            ]
-
-            return (
-                jsonify(
-                    {
-                        "status": "success",
-                        "data": data,
-                        "data_flex": data_flex,
-                        "metric": metric,
-                    }
-                ),
-                200,
-            )
-
-        if get_all:
-            offset = 0
-            limit = 1000
-            all_notes = []
-            while True:
-                data = (
+                query = (
                     supabase.table("robot_process_automation_notes_records")
                     .select("location, flexologist_name, note_score, first_timer")
                     .eq("config_id", config_id)
                     .neq("status", "No Show")
                     .gte("appointment_date", start_date)
                     .lt("appointment_date", end_date)
-                    .range(offset, offset + limit - 1)
-                    .execute()
-                ).data
-                all_notes.extend(data)
-                if len(data) < limit:
+                )
+                
+                if first_timer_filter:
+                    query = query.eq("first_timer", first_timer_filter)
+                
+                data_batch = query.range(offset, offset + limit - 1).execute().data
+                all_notes.extend(data_batch)
+                
+                if len(data_batch) < limit:
                     break
                 offset += limit
 
             if not all_notes:
-                return (
-                    jsonify(
-                        {
-                            "status": "success",
-                            "data": [],
-                            "metric": metric,
-                        }
-                    ),
-                    200,
-                )
+                return jsonify({
+                    "status": "success",
+                    "data": [],
+                    "data_flex": [],
+                    "metric": metric,
+                }), 200
 
-            # filter_by = "location" if rank_by == "location" else "flexologist_name"
-
-            group_sums = {}
-            group_counts = {}
-            group_sums_flex = {}
-            group_counts_flex = {}
+            # Calculate averages
+            from collections import defaultdict
+            group_sums_location = defaultdict(float)
+            group_counts_location = defaultdict(int)
+            group_sums_flex = defaultdict(float)
+            group_counts_flex = defaultdict(int)
+            
             for booking in all_notes:
-                score = (
-                    int(booking["note_score"]) if booking["note_score"] != "N/A" else 0
-                )
-                percentage = round(
-                    (score / (16.0 if booking["first_timer"] == "YES" else 4.0)) * 100,
-                    2,
-                )
-                group_key = (
-                    booking["location"].lower()
-                    # if filter_by == "flexologist_name"
-                    # else booking[filter_by]
-                )
-                group_key_flex = booking["flexologist_name"].lower()
-                group_sums[group_key] = group_sums.get(group_key, 0) + percentage
-                group_counts[group_key] = group_counts.get(group_key, 0) + 1
-                group_sums_flex[group_key_flex] = (
-                    group_sums_flex.get(group_key_flex, 0) + percentage
-                )
-                group_counts_flex[group_key_flex] = (
-                    group_counts_flex.get(group_key_flex, 0) + 1
-                )
+                score = int(booking["note_score"]) if booking["note_score"] != "N/A" else 0
+                max_score = 16.0 if booking["first_timer"] == "YES" else 4.0
+                percentage = (score / max_score) * 100
+                
+                loc = booking["location"].lower()
+                flex = booking["flexologist_name"].lower()
+                
+                group_sums_location[loc] += percentage
+                group_counts_location[loc] += 1
+                group_sums_flex[flex] += percentage
+                group_counts_flex[flex] += 1
 
-            averages = {}
-            for key in group_sums:
-                averages[key] = {
-                    "avg": (
-                        round(group_sums[key] / group_counts[key], 2)
-                        if group_counts[key] > 0
-                        else 0
-                    ),
-                    "total": group_counts[key],
+            # Calculate and sort averages
+            averages_location = {
+                key: {
+                    "avg": round(group_sums_location[key] / group_counts_location[key], 2),
+                    "total": group_counts_location[key],
                 }
-
-            averages_flex = {}
-            for key in group_sums_flex:
-                averages_flex[key] = {
-                    "avg": (
-                        round(group_sums_flex[key] / group_counts_flex[key], 2)
-                        if group_counts_flex[key] > 0
-                        else 0
-                    ),
+                for key in group_sums_location
+            }
+            
+            averages_flex = {
+                key: {
+                    "avg": round(group_sums_flex[key] / group_counts_flex[key], 2),
                     "total": group_counts_flex[key],
                 }
+                for key in group_sums_flex
+            }
 
-            sorted_averages = sorted(
-                averages.items(), key=lambda item: item[1]["avg"], reverse=True
+            sorted_locations = sorted(
+                averages_location.items(),
+                key=lambda item: item[1]["avg"],
+                reverse=True,
             )
-            sorted_averages_flex = sorted(
-                averages_flex.items(), key=lambda item: item[1]["avg"], reverse=True
+            sorted_flex = sorted(
+                averages_flex.items(),
+                key=lambda item: item[1]["avg"],
+                reverse=True,
             )
 
-            data = [
-                {"name": name, "count": data_dict["avg"], "total": data_dict["total"]}
-                for name, data_dict in sorted_averages
-            ]
-            data_flex = [
-                {"name": name, "count": data_dict["avg"], "total": data_dict["total"]}
-                for name, data_dict in sorted_averages_flex
-            ]
-
-            return (
-                jsonify(
-                    {
-                        "status": "success",
-                        "data": data,
-                        "data_flex": data_flex,
-                        "metric": metric,
-                    }
-                ),
-                200,
-            )
+            return jsonify({
+                "status": "success",
+                "data": [
+                    {"name": name, "count": data_dict["avg"], "total": data_dict["total"]}
+                    for name, data_dict in sorted_locations
+                ],
+                "data_flex": [
+                    {"name": name, "count": data_dict["avg"], "total": data_dict["total"]}
+                    for name, data_dict in sorted_flex
+                ],
+                "metric": metric,
+            }), 200
 
     except Exception as e:
         logging.error(
@@ -1447,26 +947,33 @@ def get_ranking_analytics(token):
         )
         return jsonify({"error": str(e), "status": "error"}), 500
 
-
 @routes.route("/get_location_analytics", methods=["POST"])
 @require_bearer_token
 def get_location_analytics(token):
     try:
         user_data = decode_jwt_token(token)
-        user_id = (
+        
+        # Get user's admin_id
+        user_info = (
             supabase.table("users")
             .select("admin_id")
             .eq("id", user_data["user_id"])
+            .single()
             .execute()
-        ).data[0]["admin_id"]
+        )
+        user_id = user_info.data["admin_id"]
+        
         data = request.json
-        # rank_by = data.get("rank_by", "location")
-        location = data.get("location", None)
+        location = data.get("location")
+        
         if not location:
             return jsonify({"error": "Location is required", "status": "error"}), 400
+        
         metric = data.get("metric", "total_visits")
         filter_metric = data.get("filter_metric", "all")
         duration = data["duration"]
+        
+        # Get date range
         if duration == "custom":
             start_date_str = data["start_date"]
             end_date_str = data["end_date"]
@@ -1479,115 +986,99 @@ def get_location_analytics(token):
         if not start_date or not end_date:
             return jsonify({"error": "Invalid duration", "status": "error"}), 400
 
-        print(start_date, end_date, "start_date, end_date")
-
-        config_id = (
+        # Get config_id
+        config_result = (
             supabase.table("robot_process_automation_config")
             .select("id")
             .eq("admin_id", user_id)
+            .single()
             .execute()
-        ).data
-        if not config_id:
+        )
+        
+        if not config_result.data:
             return jsonify({"error": "No RPA config found", "status": "error"}), 400
-        config_id = config_id[0]["id"]
+        
+        config_id = config_result.data["id"]
 
+        # ===== METRIC: total_client_visits =====
         if metric == "total_client_visits":
-            first = metric == "total_client_visits" and filter_metric == "first"
-            subsequent = (
-                metric == "total_client_visits" and filter_metric == "subsequent"
-            )
-            get_all = metric == "total_client_visits" and filter_metric == "all"
-            first_timer = "YES" if first else "NO"
+            # Determine filter
+            first_timer_filter = None
+            if filter_metric == "first":
+                first_timer_filter = "YES"
+            elif filter_metric == "subsequent":
+                first_timer_filter = "NO"
+            
+            # Fetch notes with dynamic query - only select needed fields
+            rpa_notes = []
             offset = 0
             limit = 1000
-            rpa_notes = []
-            if first or subsequent:
-                while True:
-                    data = (
-                        supabase.table("robot_process_automation_notes_records")
-                        .select("*")
-                        .eq("config_id", config_id)
-                        .eq("first_timer", first_timer)
-                        .eq("location", location)
-                        .neq("status", "No Show")
-                        .gte("appointment_date", start_date)
-                        .lt("appointment_date", end_date)
-                        .range(offset, offset + limit - 1)
-                        .execute()
-                    ).data
-                    rpa_notes.extend(data)
-                    if len(data) < limit:
-                        break
-                    offset += limit
-            elif get_all:
-                while True:
-                    data = (
-                        supabase.table("robot_process_automation_notes_records")
-                        .select("*")
-                        .eq("config_id", config_id)
-                        .eq("location", location)
-                        .neq("status", "No Show")
-                        .gte("appointment_date", start_date)
-                        .lt("appointment_date", end_date)
-                        .range(offset, offset + limit - 1)
-                        .execute()
-                    ).data
-                    rpa_notes.extend(data)
-                    if len(data) < limit:
-                        break
-                    offset += limit
+            
+            while True:
+                query = (
+                    supabase.table("robot_process_automation_notes_records")
+                    .select("flexologist_name")
+                    .eq("config_id", config_id)
+                    .eq("location", location)
+                    .neq("status", "No Show")
+                    .gte("appointment_date", start_date)
+                    .lt("appointment_date", end_date)
+                )
+                
+                if first_timer_filter:
+                    query = query.eq("first_timer", first_timer_filter)
+                
+                data_batch = query.range(offset, offset + limit - 1).execute().data
+                rpa_notes.extend(data_batch)
+                
+                if len(data_batch) < limit:
+                    break
+                offset += limit
 
             if not rpa_notes:
-                return (
-                    jsonify(
-                        {
-                            "status": "success",
-                            "message": "No notes found",
-                            "data": [],
-                            "data_flex": [],
-                            "metric": metric,
-                        }
-                    ),
-                    200,
-                )
-            # filter_by = "location" if rank_by == "location" else "flexologist_name"
-            count_flex = {}
+                return jsonify({
+                    "status": "success",
+                    "message": "No notes found",
+                    "data": [],
+                    "metric": metric,
+                }), 200
+            
+            # Count by flexologist
+            from collections import defaultdict
+            count_flex = defaultdict(int)
+            
             for note in rpa_notes:
-                if note["flexologist_name"] not in count_flex:
-                    count_flex[note["flexologist_name"]] = 0
                 count_flex[note["flexologist_name"]] += 1
 
-            count_flex = dict(
-                sorted(
-                    count_flex.items(),
-                    key=lambda item: item[1],
-                    reverse=True,
-                )
+            # Sort and format
+            sorted_flex = sorted(
+                count_flex.items(),
+                key=lambda item: item[1],
+                reverse=True,
             )
+            
+            total_notes = len(rpa_notes)
+            
+            return jsonify({
+                "status": "success",
+                "data": [
+                    {"name": name, "count": count, "total": total_notes}
+                    for name, count in sorted_flex
+                ],
+                "metric": metric,
+            }), 200
 
-            return (
-                jsonify(
-                    {
-                        "status": "success",
-                        "data": [
-                            {"name": item, "count": count, "total": len(rpa_notes)}
-                            for item, count in count_flex.items()
-                        ],
-                        "metric": metric,
-                    }
-                ),
-                200,
-            )
-
+        # ===== METRIC: percentage_app_submission =====
         if metric == "percentage_app_submission":
+            # Fetch all RPA notes for this location
+            all_notes = []
             offset = 0
             limit = 1000
-            all_notes = []
-            app_submitted = []
+            
             while True:
-                data = (
+                data_batch = (
                     supabase.table("robot_process_automation_notes_records")
-                    .select("*")
+                    .select("flexologist_name")
                     .eq("config_id", config_id)
                     .eq("location", location)
                     .gte("appointment_date", start_date)
@@ -1596,307 +1087,195 @@ def get_location_analytics(token):
                     .range(offset, offset + limit - 1)
                     .execute()
                 ).data
-                all_notes.extend(data)
-                if len(data) < limit:
+                all_notes.extend(data_batch)
+                
+                if len(data_batch) < limit:
                     break
                 offset += limit
+            
             if not all_notes:
-                return (
-                    jsonify(
-                        {
-                            "status": "success",
-                            "message": "No notes found",
-                            "data": [],
-                            "metric": metric,
-                        }
-                    ),
-                    200,
-                )
+                return jsonify({
+                    "status": "success",
+                    "message": "No notes found",
+                    "data": [],
+                    "metric": metric,
+                }), 200
 
+            # Get all flexologists
             flexologists = (
                 supabase.table("users")
-                .select("*")
+                .select("id")
                 .eq("admin_id", user_id)
                 .eq("role_id", 3)
                 .execute()
             ).data
+            
             if not flexologists:
-                return (
-                    jsonify(
-                        {
-                            "status": "success",
-                            "message": "No flexologists found",
-                            "data": [],
-                            "metric": metric,
-                        }
-                    ),
-                    200,
-                )
+                return jsonify({
+                    "status": "success",
+                    "message": "No flexologists found",
+                    "data": [],
+                    "metric": metric,
+                }), 200
 
-            for flexologist in flexologists:
-                offset = 0
-                limit = 1000
-                while True:
-                    app_submitted_by_flexologist = (
-                        supabase.table("clubready_bookings")
-                        .select("*")
-                        .eq("user_id", flexologist["id"])
-                        .eq("location", location)
-                        .eq("submitted", True)
-                        .gte("created_at", start_date)
-                        .lt("created_at", end_date)
-                        .range(offset, offset + limit - 1)
-                        .execute()
-                        .data
-                    )
-                    app_submitted.extend(app_submitted_by_flexologist)
-                    if len(app_submitted_by_flexologist) < limit:
-                        break
-                    offset += limit
+            # Fetch ALL app submissions in ONE query (instead of N queries)
+            flexologist_ids = [f["id"] for f in flexologists]
+            app_submitted = []
+            offset = 0
+            limit = 1000
+            
+            while True:
+                submitted_batch = (
+                    supabase.table("clubready_bookings")
+                    .select("flexologist_name")
+                    .in_("user_id", flexologist_ids)
+                    .eq("location", location)
+                    .eq("submitted", True)
+                    .gte("created_at", start_date)
+                    .lt("created_at", end_date)
+                    .range(offset, offset + limit - 1)
+                    .execute()
+                ).data
+                app_submitted.extend(submitted_batch)
+                
+                if len(submitted_batch) < limit:
+                    break
+                offset += limit
 
-            total_visits_per_flex = {}
+            # Count visits and submissions
+            from collections import defaultdict
+            total_visits_per_flex = defaultdict(int)
+            submitted_per_flex = defaultdict(int)
+            
             for note in all_notes:
-                flex = (
-                    note["flexologist_name"].lower() if note["flexologist_name"] else ""
-                )
-
-                total_visits_per_flex[flex] = total_visits_per_flex.get(flex, 0) + 1
-
-            submitted_per_flex = {}
+                flex = note["flexologist_name"].lower() if note.get("flexologist_name") else ""
+                total_visits_per_flex[flex] += 1
+            
             for sub in app_submitted:
-                flex = (
-                    sub["flexologist_name"].lower() if sub["flexologist_name"] else ""
-                )
-                submitted_per_flex[flex] = submitted_per_flex.get(flex, 0) + 1
-
+                flex = sub["flexologist_name"].lower() if sub.get("flexologist_name") else ""
+                submitted_per_flex[flex] += 1
+            
+            # Calculate percentages
             flex_percentages = {}
             for flex in total_visits_per_flex:
                 sub = submitted_per_flex.get(flex, 0)
                 total = total_visits_per_flex[flex]
                 pct = round((sub / total) * 100, 2) if total > 0 else 0
                 flex_percentages[flex] = {"pct": pct, "total": total}
+            
+            # Sort results
             sorted_flex = sorted(
-                flex_percentages.items(), key=lambda item: item[1]["pct"], reverse=True
+                flex_percentages.items(),
+                key=lambda item: item[1]["pct"],
+                reverse=True,
             )
-
+            
             # Calculate overall percentage
             total_robot_bookings = len(all_notes)
             total_app_submitted = len(app_submitted)
             overall_percentage = round(
-                (
-                    (total_app_submitted / total_robot_bookings * 100)
-                    if total_robot_bookings > 0
-                    else 0
-                ),
+                (total_app_submitted / total_robot_bookings * 100)
+                if total_robot_bookings > 0
+                else 0,
                 2,
             )
 
-            # if rank_by == "location":
-            #     data = [{"name": loc, "count": pct} for loc, pct in sorted_locations]
-            # else:
-            #     data = [{"name": flex, "count": pct} for flex, pct in sorted_flex]
-            data = [
-                {"name": flex, "count": data_dict["pct"], "total": data_dict["total"]}
-                for flex, data_dict in sorted_flex
-            ]
+            return jsonify({
+                "status": "success",
+                "data": [
+                    {"name": flex, "count": data_dict["pct"], "total": data_dict["total"]}
+                    for flex, data_dict in sorted_flex
+                ],
+                "metric": metric,
+                "overall_percentage": overall_percentage,
+            }), 200
 
-            # Add overall percentage to data or response
-            return (
-                jsonify(
-                    {
-                        "status": "success",
-                        "data": data,
-                        "metric": metric,
-                        "overall_percentage": overall_percentage,
-                    }
-                ),
-                200,
-            )
-
-        first = metric == "note_quality_percentage" and filter_metric == "first"
-        subsequent = (
-            metric == "note_quality_percentage" and filter_metric == "subsequent"
-        )
-        get_all = metric == "note_quality_percentage" and filter_metric == "all"
-
-        if first or subsequent:
-            first_timer = "YES" if first else "NO"
+        # ===== METRIC: note_quality_percentage =====
+        if metric == "note_quality_percentage":
+            # Determine filter
+            first_timer_filter = None
+            if filter_metric == "first":
+                first_timer_filter = "YES"
+            elif filter_metric == "subsequent":
+                first_timer_filter = "NO"
+            
+            # Fetch notes
+            all_notes = []
             offset = 0
             limit = 1000
-            all_notes = []
+            
             while True:
-                data = (
+                query = (
                     supabase.table("robot_process_automation_notes_records")
-                    .select("*")
-                    .eq("config_id", config_id)
-                    .eq("first_timer", first_timer)
-                    .eq("location", location)
-                    .neq("status", "No Show")
-                    .gte("appointment_date", start_date)
-                    .lt("appointment_date", end_date)
-                    .range(offset, offset + limit - 1)
-                    .execute()
-                ).data
-                all_notes.extend(data)
-                if len(data) < limit:
-                    break
-                offset += limit
-
-            if not all_notes:
-                return (
-                    jsonify(
-                        {
-                            "status": "success",
-                            "data": [],
-                            "metric": metric,
-                        }
-                    ),
-                    200,
-                )
-
-            # filter_by = "location" if rank_by == "location" else "flexologist_name"
-
-            group_sums_flex = {}
-            group_counts_flex = {}
-            for booking in all_notes:
-                score = (
-                    int(booking["note_score"]) if booking["note_score"] != "N/A" else 0
-                )
-                percentage = round(
-                    (score / (16.0 if booking["first_timer"] == "YES" else 4.0)) * 100,
-                    2,
-                )
-
-                group_key_flex = booking["flexologist_name"].lower()
-                group_sums_flex[group_key_flex] = (
-                    group_sums_flex.get(group_key_flex, 0) + percentage
-                )
-                group_counts_flex[group_key_flex] = (
-                    group_counts_flex.get(group_key_flex, 0) + 1
-                )
-
-            averages_flex = {}
-            for key in group_sums_flex:
-                averages_flex[key] = {
-                    "avg": (
-                        round(group_sums_flex[key] / group_counts_flex[key], 2)
-                        if group_counts_flex[key] > 0
-                        else 0
-                    ),
-                    "total": group_counts_flex[key],
-                }
-
-            sorted_averages_flex = sorted(
-                averages_flex.items(), key=lambda item: item[1]["avg"], reverse=True
-            )
-
-            data = [
-                {"name": name, "count": data_dict["avg"], "total": data_dict["total"]}
-                for name, data_dict in sorted_averages_flex
-            ]
-
-            return (
-                jsonify(
-                    {
-                        "status": "success",
-                        "data": data,
-                        "metric": metric,
-                    }
-                ),
-                200,
-            )
-
-        if get_all:
-            offset = 0
-            limit = 1000
-            all_notes = []
-            while True:
-                data = (
-                    supabase.table("robot_process_automation_notes_records")
-                    .select("*")
+                    .select("flexologist_name, note_score, first_timer")
                     .eq("config_id", config_id)
                     .eq("location", location)
                     .neq("status", "No Show")
                     .gte("appointment_date", start_date)
                     .lt("appointment_date", end_date)
-                    .range(offset, offset + limit - 1)
-                    .execute()
-                ).data
-                all_notes.extend(data)
-                if len(data) < limit:
+                )
+                
+                if first_timer_filter:
+                    query = query.eq("first_timer", first_timer_filter)
+                
+                data_batch = query.range(offset, offset + limit - 1).execute().data
+                all_notes.extend(data_batch)
+                
+                if len(data_batch) < limit:
                     break
                 offset += limit
 
             if not all_notes:
-                return (
-                    jsonify(
-                        {
-                            "status": "success",
-                            "data": [],
-                            "metric": metric,
-                        }
-                    ),
-                    200,
-                )
+                return jsonify({
+                    "status": "success",
+                    "data": [],
+                    "metric": metric,
+                }), 200
 
-            # filter_by = "location" if rank_by == "location" else "flexologist_name"
-
-            group_sums_flex = {}
-            group_counts_flex = {}
+            # Calculate averages
+            from collections import defaultdict
+            group_sums_flex = defaultdict(float)
+            group_counts_flex = defaultdict(int)
+            
             for booking in all_notes:
-                score = (
-                    int(booking["note_score"]) if booking["note_score"] != "N/A" else 0
-                )
-                percentage = round(
-                    (score / (16.0 if booking["first_timer"] == "YES" else 4.0)) * 100,
-                    2,
-                )
+                score = int(booking["note_score"]) if booking["note_score"] != "N/A" else 0
+                max_score = 16.0 if booking["first_timer"] == "YES" else 4.0
+                percentage = (score / max_score) * 100
+                
+                flex = booking["flexologist_name"].lower()
+                
+                group_sums_flex[flex] += percentage
+                group_counts_flex[flex] += 1
 
-                group_key_flex = booking["flexologist_name"].lower()
-                group_sums_flex[group_key_flex] = (
-                    group_sums_flex.get(group_key_flex, 0) + percentage
-                )
-                group_counts_flex[group_key_flex] = (
-                    group_counts_flex.get(group_key_flex, 0) + 1
-                )
-
-            averages_flex = {}
-            for key in group_sums_flex:
-                averages_flex[key] = {
-                    "avg": (
-                        round(group_sums_flex[key] / group_counts_flex[key], 2)
-                        if group_counts_flex[key] > 0
-                        else 0
-                    ),
+            # Calculate and sort averages
+            averages_flex = {
+                key: {
+                    "avg": round(group_sums_flex[key] / group_counts_flex[key], 2),
                     "total": group_counts_flex[key],
                 }
+                for key in group_sums_flex
+            }
 
-            sorted_averages_flex = sorted(
-                averages_flex.items(), key=lambda item: item[1]["avg"], reverse=True
+            sorted_flex = sorted(
+                averages_flex.items(),
+                key=lambda item: item[1]["avg"],
+                reverse=True,
             )
 
-            data = [
-                {"name": name, "count": data_dict["avg"], "total": data_dict["total"]}
-                for name, data_dict in sorted_averages_flex
-            ]
-
-            return (
-                jsonify(
-                    {
-                        "status": "success",
-                        "data": data,
-                        "metric": metric,
-                    }
-                ),
-                200,
-            )
+            return jsonify({
+                "status": "success",
+                "data": [
+                    {"name": name, "count": data_dict["avg"], "total": data_dict["total"]}
+                    for name, data_dict in sorted_flex
+                ],
+                "metric": metric,
+            }), 200
 
     except Exception as e:
         logging.error(
             f"Error in POST api/admin/analytics/get_location_analytics: {str(e)}"
         )
         return jsonify({"error": str(e), "status": "error"}), 500
-
 
 def init_analytics_routes(app):
     global supabase

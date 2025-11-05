@@ -635,50 +635,84 @@ def update_user_status(token):
 def get_users(token):
     try:
         user_data = decode_jwt_token(token)
-        if user_data["role_id"] == 3:
-            return (
-                jsonify(
-                    {
-                        "error": "You are not authorized to see this page",
-                        "status": "error",
-                    }
-                ),
-                401,
-            )
-        if user_data["role_id"] == 1:
+        is_admin = user_data["role_id"] == 1
+        
+        query = (
+            supabase.table("users")
+            .select("id, email, full_name, status, role_id, invited_at, other_clubready_accounts, clubready_user_id")
+            .in_("role_id", [3, 8])
+        )
+        
+        if not is_admin:
+            query = query.eq("username", user_data["username"])
+            
+        employees_from_supabase = query.execute().data
+        
+        # For admins, merge with Airtable data
+        if is_admin:
             employees_from_airtable = get_employee_ownwer()
-            employees_from_supabase = (
-                supabase.table("users")
-                .select("id, email, full_name, status, role_id, invited_at")
-                .eq("username", user_data["username"])
-                .in_("role_id", [3, 8])
-                .execute()
-            )
-            employees_from_supabase = employees_from_supabase.data
+            existing_emails = {e["email"] for e in employees_from_supabase}
+            
             for employee in employees_from_airtable:
-                matching_employee = next(
-                    (
-                        e
-                        for e in employees_from_supabase
-                        if e["email"] == employee["email"]
-                    ),
-                    None,
-                )
-                if not matching_employee:
+                if employee["email"] not in existing_emails:
                     employee["status"] = None
                     employee["invited_at"] = None
                     employees_from_supabase.append(employee)
-            employees = employees_from_supabase
-        else:
-            employees = user = (
-                supabase.table("users")
-                .select("id, email, full_name, status, role_id, invited_at")
-                .eq("username", user_data["username"])
-                .in_("role_id", [3, 8])
+        
+        
+        account_ids = set()
+        for employee in employees_from_supabase:
+            if employee.get("status") == 1:
+                if employee.get("clubready_user_id"):
+                    account_ids.add(employee["clubready_user_id"])
+                
+                if employee.get("other_clubready_accounts"):
+                    other_accounts = json.loads(employee["other_clubready_accounts"])
+                    for account in other_accounts:
+                        if account.get("id"):
+                            account_ids.add(account["id"])
+        
+        location_map = {}
+        if account_ids:
+            locations_result = (
+                supabase.table("clubready_bookings")
+                .select("account_id, location")
+                .in_("account_id", list(account_ids))
                 .execute()
             )
-            employees = user.data
-        return jsonify({"users": employees, "status": "success"}), 200
+            
+            for loc in locations_result.data:
+                location_map[loc["account_id"]] = loc["location"]
+        
+        for employee in employees_from_supabase:
+            if employee.get("status") == 1:
+                employee["locations"] = {"total": 0, "list": []}
+                
+                # Add primary location
+                primary_id = employee.get("clubready_user_id")
+                if primary_id and primary_id in location_map:
+                    employee["locations"]["list"].append({
+                        "name": location_map[primary_id],
+                        "active": True,
+                        "primary": True
+                    })
+                    employee["locations"]["total"] = 1
+                
+                # Add other locations
+                if employee.get("other_clubready_accounts"):
+                    other_accounts = json.loads(employee["other_clubready_accounts"])
+                    for account in other_accounts:
+                        account_id = account.get("id")
+                        if account_id and account_id in location_map:
+                            employee["locations"]["list"].append({
+                                "name": location_map[account_id],
+                                "active": account.get("active", False),
+                                "primary": False
+                            })
+                            employee["locations"]["total"] += 1
+        
+        return jsonify({"users": employees_from_supabase, "status": "success"}), 200
+        
     except Exception as e:
         logging.error(f"Error in GET /admin/get-users: {str(e)}")
         return jsonify({"error": str(e), "status": "error"}), 500

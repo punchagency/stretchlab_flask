@@ -610,7 +610,9 @@ def login():
                     "note taking",
                 )
             supabase.table("users").update(
-                {"last_login": datetime.now().isoformat()}
+                {"last_login": datetime.now().isoformat(
+                    timespec="microseconds"
+                )}
             ).eq("id", user.data[0]["id"]).execute()
 
             if user.data[0]["role_id"] == 8:

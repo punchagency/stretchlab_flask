@@ -155,147 +155,45 @@ def scrutinize_notes(notes, active):
 
     return data
 
-
-# def format_notes(notes):
-
-#     prompt = """
-#     The notes:
-#     {notes}
-
-#      Organize StretchLab Flexologist session notes into a structured and concise format following the SOAP note style commonly used in physical therapy. Focus on detailing what actions were taken during the session, why they were performed, and future plans. Ensure to exclude any 'Meeting Summary' details such as client name, Flexologist, or location. Highlight any missing information and provide suggestions for improvement in note-taking, if necessary.
-#       # Steps:
-#       1. What was done in the session:
-#          - Identify the phase of periodization. Foundation phase is Foundation, Active phase is Active, Performance phase is Performance.
-#          - Describe the work being done within that phase, including variables and focus areas.
-#          - Class is the session number or the class number.
-#       2. Why the actions were performed:
-#          - Explain the reasoning behind the techniques used, such as addressing muscle guarding or enhancing tissue tolerance.
-#       3. Future plans:
-#          - Outline plans for the next session.
-#          - Include homework assignments, such as specific exercise videos or in-person demonstrations.
-#          - Suggest any relevant lifestyle changes or new activities.
-#       4. Identify and Highlight Missing Information:
-#          - Note any gaps in the provided session notes.
-#       5. Suggestions for Improvement:
-#          - Offer brief suggestions to enhance the quality of note-taking by the Flexologist.
-#       # Output Format:
-#         Return a JSON object with a single field, "notes", which is an array containing the formatted note objects i.e Class (if mentioned), Phase (if mentioned), Today, Next, PNF (if mentioned), Homework (if mentioned), Recommendation (if mentioned), Considerations, Missing Information and Suggestions
-
-#       # here is an example of a formatted note. Strictly adhere to the format provided:
-#         **Class**: 23 or Session #26 [if class is not mentioned, do not include it in JSON output]
-#         **Phase**: Active [if phase is not mentioned, do not include it in JSON output]
-#         **Today**: Full body flexibility and mobility improvement 
-#         **Next**: Focus on shoulders, hip, and abductor regions to address tightness identified in this session.
-#         **PNF**: 2-3 PNF or PNF 2-3
-#         **Homework**: Assigned shoulder and doorway stretches. Recommend practicing these daily to enhance shoulder mobility and alleviate tightness. Consider suggesting specific resources or videos for guidance. [if homework is not mentioned, do not include it in JSON output]
-#         **Recommendation**: 4x50 or 4x25 minutes, or some sort of recommendation [if not provided, do not include it in JSON output]
-#         **Considerations**: Ayesha's long hours at the computer may contribute to her shoulder tension; discussing ergonomic adjustments or breaks during work hours could be beneficial in future sessions.[if not provided, do not include it in JSON output]
-#         **Missing Information**:The Class, Phase, what was done in the session and next plan were not mentioned
-        
-#         **Suggested Improvement**:
-#         Consider providing more detailed observations of each stretch's effectiveness and any specific feedback from the client regarding comfort or difficulty.
-    
-
-#     """
-#     max_retries = 3
-#     retry_delay = 8
-
-#     for attempt in range(max_retries):
-#         try:
-#             response = client.chat.completions.create(
-#                 model="gpt-4o-mini",
-#                 messages=[
-#                     {
-#                         "role": "system",
-#                         "content": "You are a note formatter that formats notes into a structured and concise format following the format provided in the example. Focus on detailing what actions were taken during the session, why they were performed, and future plans. Ensure to exclude any 'Meeting Summary' details such as client name, Flexologist, or location. Highlight any missing information and provide suggestions for improvement in note-taking, if necessary.",
-#                     },
-#                     {
-#                         "role": "user",
-#                         "content": prompt.format(notes=notes),
-#                     },
-#                 ],
-#                 temperature=0,
-#             )
-#             result = response.choices[0].message.content
-#             if not isinstance(result, str):
-#                 raise ValueError("Response content is not a string")
-
-#             cleaned_result = result.strip()
-#             if cleaned_result.startswith("```json"):
-#                 cleaned_result = cleaned_result[7:-3].strip()
-
-#             data = json.loads(cleaned_result)
-
-#             return data
-
-#         except RateLimitError as e:
-#             print(f"Rate limit error: {e}")
-#             if attempt < max_retries - 1:
-#                 wait_time = retry_delay * (2**attempt)
-#                 print(f"Retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
-#                 time.sleep(wait_time)
-#             else:
-#                 print("Max retries reached")
-#                 break
-#         except Exception as e:
-#             print(f"OpenAI error: {e}")
-#             break
-#     data = {"notes": ["No notes formatted error"]}
-
-#     return data
-
-
 def format_notes(notes):
 
-    prompt = f"""
+    prompt = """
     The notes:
     {notes}
 
-    Organize the StretchLab Flexologist session notes into a structured yet expressive SOAP-style format. Maintain the original tone, flow, and personality of the note, but reorganize it to be clear and structured. Keep the storytelling style where possible while ensuring the content is concise, professional, and aligned with SOAP documentation used in physical therapy.
-
-    Do not rephrase excessively or make the note sound robotic — instead, enhance readability, structure, and clarity while preserving the intent and voice of the Flexologist.
+     Organize StretchLab Flexologist session notes into a structured and concise format following the SOAP note style commonly used in physical therapy. Focus on detailing what actions were taken during the session, why they were performed, and future plans. Ensure to exclude any 'Meeting Summary' details such as client name, Flexologist, or location. Highlight any missing information and provide suggestions for improvement in note-taking, if necessary.
       # Steps:
       1. What was done in the session:
-         - Identify the phase of periodization (Foundation, Active, or Performance).
-         - Retain the Flexologist's natural tone describing the work done, key stretches, muscles targeted, and observed client responses.
-         - Include details like class/session/logging number if mentioned..
+         - Identify the phase of periodization. Foundation phase is Foundation, Active phase is Active, Performance phase is Performance
+         - Describe the work being done within that phase, including variables and focus areas.
+         - Class is the session number or the class number or the logging number.
       2. Why the actions were performed:
-         - Keep the reasoning narrative-style but clarify the purpose of the techniques (e.g., improving range of motion, reducing muscle guarding, restoring balance).
+         - Explain the reasoning behind the techniques used, such as addressing muscle guarding or enhancing tissue tolerance.
       3. Future plans:
-         - Outline the next steps or focus areas in a natural yet structured tone.
-         - Include homework, self-care, or activity recommendations if provided.
-         - Suggest additional lifestyle advice if applicable.
+         - Outline plans for the next session.
+         - Include homework assignments, such as specific exercise videos or in-person demonstrations.
+         - Suggest any relevant lifestyle changes or new activities.
       4. Identify and Highlight Missing Information:
-         - Explicitly list what key elements (Class, Phase, rationale, plan, etc.) were not mentioned.
+         - Note any gaps in the provided session notes.
       5. Suggestions for Improvement:
-         - Offer constructive suggestions to improve note-taking, focusing on detail, clarity, and progression tracking.
+         - Offer brief suggestions to enhance the quality of note-taking by the Flexologist.
       # Output Format:
-        Return a JSON object with a single field "notes" that contains an array of formatted expressive note objects using the fields below:
+        Return a JSON object with a single field, "notes", which is an array containing the formatted note objects i.e Class (if mentioned), Phase (if mentioned), Today, Next, PNF (if mentioned), Homework (if mentioned), Details, Recommendation (if mentioned), Considerations, Missing Information and Suggestions
 
-      {{
-        "notes": [
-                {{
-                "Class": "23 or Session #26",
-                "Phase": "Active",
-                "Today": "Expressively written summary of what was done in the session, maintaining the Flexologist's tone and details.",
-                "Next": "Next session plan or narrative follow-up goal.",
-                "PNF": "2-3 PNF (if mentioned)",
-                "Homework": "Narrative-style summary of assigned stretches or recommendations.",
-                "Recommendation": "E.g. 4x25 minutes weekly or lifestyle advice.",
-                "Considerations": "Contextual insights or external contributing factors affecting flexibility or performance.",
-                "Missing Information": "List of what's missing.",
-                "Suggested Improvement": "Natural-language suggestion for how to improve the clarity and completeness of session documentation."
-                }}
-            ]
-      }}
-
-      Notes:
-
-        - Only include a field if it was mentioned in the original notes.
-
-        - Preserve emotional or descriptive language (e.g., “Client felt more open through the hips after deep PNF work”).
-
-        - Keep the output structured but authentically human — as if a Flexologist were documenting naturally but clearly.
+      # here is an example of a formatted note. Strictly adhere to the format provided:
+        **Class**: 23 or Session #26 [if class is not mentioned, do not include it in JSON output]
+        **Phase**: Active [if phase is not mentioned, do not include it in JSON output]
+        **Today**: Full body flexibility and mobility improvement 
+        **Next**: Focus on shoulders, hip, and abductor regions to address tightness identified in this session.
+        **PNF**: 2-3 PNF or PNF 2-3
+        **Homework**: Assigned shoulder and doorway stretches. Recommend practicing these daily to enhance shoulder mobility and alleviate tightness. Consider suggesting specific resources or videos for guidance. [if homework is not mentioned, do not include it in JSON output]
+        **Details**: This is the details of the notes. Capturing all the intricacies of the note - the client's conversation, discussions during the session, reasons and other information stated, it should emcompass the inner detail of the session; keeping the tone
+        **Recommendation**: 4x50 or 4x25 minutes, or some sort of recommendation [if not provided, do not include it in JSON output]
+        **Considerations**: Ayesha's long hours at the computer may contribute to her shoulder tension; discussing ergonomic adjustments or breaks during work hours could be beneficial in future sessions.[if not provided, do not include it in JSON output]
+        **Missing Information**:The Class, Phase, what was done in the session and next plan were not mentioned
+        
+        **Suggested Improvement**:
+        Consider providing more detailed observations of each stretch's effectiveness and any specific feedback from the client regarding comfort or difficulty.
     
 
     """
@@ -305,7 +203,7 @@ def format_notes(notes):
     for attempt in range(max_retries):
         try:
             response = client.chat.completions.create(
-                model="gpt-5-mini",
+                model="gpt-4o-mini",
                 messages=[
                     {
                         "role": "system",
@@ -313,10 +211,10 @@ def format_notes(notes):
                     },
                     {
                         "role": "user",
-                        "content": prompt
+                        "content": prompt.format(notes=notes),
                     },
                 ],
-                temperature=1,
+                temperature=0,
             )
             result = response.choices[0].message.content
             if not isinstance(result, str):
@@ -345,3 +243,105 @@ def format_notes(notes):
     data = {"notes": ["No notes formatted error"]}
 
     return data
+
+
+# def format_notes(notes):
+
+#     prompt = f"""
+#     The notes:
+#     {notes}
+
+#     Organize the StretchLab Flexologist session notes into a structured yet expressive SOAP-style format. Maintain the original tone, flow, and personality of the note, but reorganize it to be clear and structured. Keep the storytelling style where possible while ensuring the content is concise, professional, and aligned with SOAP documentation used in physical therapy.
+
+#     Do not rephrase excessively or make the note sound robotic — instead, enhance readability, structure, and clarity while preserving the intent and voice of the Flexologist.
+#       # Steps:
+#       1. What was done in the session:
+#          - Identify the phase of periodization (Foundation, Active, or Performance).
+#          - Retain the Flexologist's natural tone describing the work done, key stretches, muscles targeted, and observed client responses.
+#          - Include details like class/session/logging number if mentioned..
+#       2. Why the actions were performed:
+#          - Keep the reasoning narrative-style but clarify the purpose of the techniques (e.g., improving range of motion, reducing muscle guarding, restoring balance).
+#       3. Future plans:
+#          - Outline the next steps or focus areas in a natural yet structured tone.
+#          - Include homework, self-care, or activity recommendations if provided.
+#          - Suggest additional lifestyle advice if applicable.
+#       4. Identify and Highlight Missing Information:
+#          - Explicitly list what key elements (Class, Phase, rationale, plan, etc.) were not mentioned.
+#       5. Suggestions for Improvement:
+#          - Offer constructive suggestions to improve note-taking, focusing on detail, clarity, and progression tracking.
+#       # Output Format:
+#         Return a JSON object with a single field "notes" that contains an array of formatted expressive note objects using the fields below:
+
+#       {{
+#         "notes": [
+#                 {{
+#                 "Class": "23 or Session #26",
+#                 "Phase": "Active",
+#                 "Today": "Expressively written summary of what was done in the session, maintaining the Flexologist's tone and details.",
+#                 "Next": "Next session plan or narrative follow-up goal.",
+#                 "PNF": "2-3 PNF (if mentioned)",
+#                 "Homework": "Narrative-style summary of assigned stretches or recommendations.",
+#                 "Recommendation": "E.g. 4x25 minutes weekly or lifestyle advice.",
+#                 "Considerations": "Contextual insights or external contributing factors affecting flexibility or performance.",
+#                 "Missing Information": "List of what's missing.",
+#                 "Suggested Improvement": "Natural-language suggestion for how to improve the clarity and completeness of session documentation."
+#                 }}
+#             ]
+#       }}
+
+#       Notes:
+
+#         - Only include a field if it was mentioned in the original notes.
+
+#         - Preserve emotional or descriptive language (e.g., “Client felt more open through the hips after deep PNF work”).
+
+#         - Keep the output structured but authentically human — as if a Flexologist were documenting naturally but clearly.
+    
+
+#     """
+#     max_retries = 3
+#     retry_delay = 8
+
+#     for attempt in range(max_retries):
+#         try:
+#             response = client.chat.completions.create(
+#                 model="gpt-5-mini",
+#                 messages=[
+#                     {
+#                         "role": "system",
+#                         "content": "You are a note formatter that formats notes into a structured and concise format following the format provided in the example. Focus on detailing what actions were taken during the session, why they were performed, and future plans. Ensure to exclude any 'Meeting Summary' details such as client name, Flexologist, or location. Highlight any missing information and provide suggestions for improvement in note-taking, if necessary.",
+#                     },
+#                     {
+#                         "role": "user",
+#                         "content": prompt
+#                     },
+#                 ],
+#                 temperature=1,
+#             )
+#             result = response.choices[0].message.content
+#             if not isinstance(result, str):
+#                 raise ValueError("Response content is not a string")
+
+#             cleaned_result = result.strip()
+#             if cleaned_result.startswith("```json"):
+#                 cleaned_result = cleaned_result[7:-3].strip()
+
+#             data = json.loads(cleaned_result)
+
+#             return data
+
+#         except RateLimitError as e:
+#             print(f"Rate limit error: {e}")
+#             if attempt < max_retries - 1:
+#                 wait_time = retry_delay * (2**attempt)
+#                 print(f"Retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
+#                 time.sleep(wait_time)
+#             else:
+#                 print("Max retries reached")
+#                 break
+#         except Exception as e:
+#             print(f"OpenAI error: {e}")
+#             break
+#     data = {"notes": ["No notes formatted error"]}
+
+#     return data
