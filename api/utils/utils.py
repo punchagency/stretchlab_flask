@@ -2327,12 +2327,60 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
                                 same_client_booking = None
                                 page.wait_for_timeout(1000)
                             else:
-                                screenshot_url = capture_and_upload_screenshot(
-                                    page, "no_session_logged"
-                                )
-                                raise Exception(
-                                    f"No session logged{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                                )
+                                list_items = page.query_selector_all("#subnav2 li")
+                                if len(list_items) < 3:
+                                    notes_tab = page.query_selector(
+                                        ".fancybox-skin #subnav2 li:nth-child(2)"
+                                    )
+                                    notes_tab.wait_for_element_state(
+                                        "visible", timeout=10000
+                                    )
+                                    notes_tab.wait_for_element_state(
+                                        "stable", timeout=10000
+                                    )
+                                    notes_tab.click()
+                                    page.wait_for_function(
+                                        "element => !element.isConnected", arg=notes_tab
+                                    )
+                                    page.wait_for_selector(
+                                        "#subnav2 li.activesublink2", timeout=10000
+                                    )
+                                    form_details = page.wait_for_selector(
+                                        "#bkdetailform", state="visible", timeout=40000
+                                    )
+                                    page.wait_for_function(
+                                        "element => element.isConnected && element.offsetParent !== null",
+                                        arg=form_details,
+                                    )
+                                    page.select_option(
+                                        "select[id='bookingnoteclassifyID']",
+                                        label="Fitness Related",
+                                    )
+                                    textarea = page.query_selector("#bookingnotetext")
+                                    if textarea:
+                                        textarea.fill(notes)
+                                    else:
+                                        # come here and ad dthe screen capture to follow it bro
+                                        screenshot_url = capture_and_upload_screenshot(
+                                            page, "no_text_area"
+                                        )
+                                        raise Exception(
+                                            f"No text area found in the booking{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                                        )
+
+                                    submit_btn = page.query_selector(
+                                        "input[onclick*='addnote']"
+                                    )
+                                    submit_btn.click()
+                                    same_client_booking = None
+                                    page.wait_for_timeout(1000)
+                                else:
+                                    screenshot_url = capture_and_upload_screenshot(
+                                        page, "no_session_logged"
+                                    )
+                                    raise Exception(
+                                        f"No session logged{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                                    )
                         else:
                             screenshot_url = capture_and_upload_screenshot(
                                 page, "no_mid_div"
@@ -2472,7 +2520,7 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
                         event_date = div.query_selector(
                             "table tbody tr td:nth-child(2) .headertxt"
                         ).inner_text()
-
+                        
                         if event_date == period:
                             matching_booking = div
                             matching_index = i
@@ -2635,12 +2683,60 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
                                     same_client_booking = None
                                     page.wait_for_timeout(1000)
                                 else:
-                                    screenshot_url = capture_and_upload_screenshot(
-                                        page, "no_session_logged"
-                                    )
-                                    raise Exception(
-                                        f"No session logged{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                                    )
+                                    list_items = page.query_selector_all("#subnav2 li")
+                                    if len(list_items) < 3:
+                                        notes_tab = page.query_selector(
+                                            ".fancybox-skin #subnav2 li:nth-child(2)"
+                                        )
+                                        notes_tab.wait_for_element_state(
+                                            "visible", timeout=10000
+                                        )
+                                        notes_tab.wait_for_element_state(
+                                            "stable", timeout=10000
+                                        )
+                                        notes_tab.click()
+                                        page.wait_for_function(
+                                            "element => !element.isConnected", arg=notes_tab
+                                        )
+                                        page.wait_for_selector(
+                                            "#subnav2 li.activesublink2", timeout=10000
+                                        )
+                                        form_details = page.wait_for_selector(
+                                            "#bkdetailform", state="visible", timeout=40000
+                                        )
+                                        page.wait_for_function(
+                                            "element => element.isConnected && element.offsetParent !== null",
+                                            arg=form_details,
+                                        )
+                                        page.select_option(
+                                            "select[id='bookingnoteclassifyID']",
+                                            label="Fitness Related",
+                                        )
+                                        textarea = page.query_selector("#bookingnotetext")
+                                        if textarea:
+                                            textarea.fill(notes)
+                                        else:
+                                            # come here and ad dthe screen capture to follow it bro
+                                            screenshot_url = capture_and_upload_screenshot(
+                                                page, "no_text_area"
+                                            )
+                                            raise Exception(
+                                                f"No text area found in the booking{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                                            )
+
+                                        submit_btn = page.query_selector(
+                                            "input[onclick*='addnote']"
+                                        )
+                                        submit_btn.click()
+                                        same_client_booking = None
+                                        page.wait_for_timeout(1000)
+                                    else:
+                                        screenshot_url = capture_and_upload_screenshot(
+                                            page, "no_session_logged"
+                                        )
+                                        raise Exception(
+                                            f"No session logged{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                                        )
                             else:
                                 screenshot_url = capture_and_upload_screenshot(
                                     page, "no_mid_div"
@@ -2648,6 +2744,7 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
                                 raise Exception(
                                     f"No mid div found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
                                 )
+
                     else:
                         screenshot_url = capture_and_upload_screenshot(
                             page, "no_matching_booking"
@@ -2766,6 +2863,7 @@ def submit_notes(username, password, period, notes, location=None, client_name=N
             browser.close()
         if playwright:
             playwright.stop()
+
 
 
 def submit_after_log_off(

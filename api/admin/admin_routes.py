@@ -640,12 +640,9 @@ def get_users(token):
         query = (
             supabase.table("users")
             .select("id, email, full_name, status, role_id, invited_at, other_clubready_accounts, clubready_user_id")
-            .in_("role_id", [3, 8])
+            .in_("role_id", [3, 8]).eq("username", user_data["username"])
         )
         
-        if not is_admin:
-            query = query.eq("username", user_data["username"])
-            
         employees_from_supabase = query.execute().data
         
         # For admins, merge with Airtable data

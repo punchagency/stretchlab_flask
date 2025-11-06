@@ -275,22 +275,17 @@ def webhook():
             if old_quantity is not None and old_quantity != quantity:
                 service = None
 
-                if get_user.data[0]["note_taking_subscription_id"] == subscription_id:
+                if existing.data[0]["note_taking_subscription_id"] == subscription_id:
                     service = "note-taking"
                 else:
                     service = "robot"
 
-                get_user = (
-                    supabase.table("businesses")
-                    .select("admin_id")
-                    .eq("customer_id", customer_id)
-                    .execute()
-                )
+               
 
-                if get_user.data:
+                if existing.data:
                     supabase.table("notifications").insert(
                         {
-                            "user_id": get_user.data[0]["admin_id"],
+                            "user_id": existing.data[0]["admin_id"],
                             "message": f'{"A new flexologist" if service == "note-taking" else "A new location"} has been added to your subscription',
                             "is_read": False,
                             "created_at": datetime.now().isoformat(),
