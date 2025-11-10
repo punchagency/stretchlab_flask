@@ -412,6 +412,16 @@ def clubready_validate(token):
 def login():
     try:
         data = request.get_json()
+        if not data or not data.get("email") or not data.get("password"):
+            return (
+                jsonify(
+                    {
+                        "message": "Please enter all credentials",
+                        "status": "error",
+                    }
+                ),
+                400,
+            )
 
         user = (
             supabase.table("users")
@@ -421,6 +431,17 @@ def login():
         )
         if len(user.data) == 0:
             return jsonify({"message": "User not found", "status": "error"}), 404
+            
+        if user.data[0]["password"] == "empty":
+            return (
+                jsonify(
+                    {
+                        "message": "User is yet to verify email, please check your email or contact admin",
+                        "status": "error",
+                    }
+                ),
+                400,
+            )
         requires_2fa = False
         is_verified = False
         role_name = (

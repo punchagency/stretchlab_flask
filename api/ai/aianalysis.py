@@ -156,9 +156,14 @@ def scrutinize_notes(notes, active):
     return data
 
 def format_notes(notes):
+    with open("api/ai/context.txt", "r") as file:
+        context = file.read()
 
     prompt = """
-    The notes:
+     - This is the context:
+    {context}
+
+    - The notes:
     {notes}
 
      Organize StretchLab Flexologist session notes into a structured and concise format following the SOAP note style commonly used in physical therapy. Focus on detailing what actions were taken during the session, why they were performed, and future plans. Ensure to exclude any 'Meeting Summary' details such as client name, Flexologist, or location. Highlight any missing information and provide suggestions for improvement in note-taking, if necessary.
@@ -178,16 +183,17 @@ def format_notes(notes):
       5. Suggestions for Improvement:
          - Offer brief suggestions to enhance the quality of note-taking by the Flexologist.
       # Output Format:
-        Return a JSON object with a single field, "notes", which is an array containing the formatted note objects i.e Class (if mentioned), Phase (if mentioned), Today, Next, PNF (if mentioned), Homework (if mentioned), Details, Recommendation (if mentioned), Considerations, Missing Information and Suggestions
+        Return a JSON object with a single field, "notes", which is an array containing the formatted note objects i.e Class (if mentioned), Phase (if mentioned), Maps (if mentioned), Today, Next, PNF (if mentioned), Homework (if mentioned), Details, Recommendation (if mentioned), Considerations, Missing Information and Suggestions
 
       # here is an example of a formatted note. Strictly adhere to the format provided:
         **Class**: 23 or Session #26 [if class is not mentioned, do not include it in JSON output]
+        **Maps**: Maps score 38 or somthing like "Composite 48, Mobility 44, Activation  55, Posture 59, Symmetry 48"- this is also Maps, so these keys should be noted as maps [if any information about maps is not mentioned, do not include it in JSON output]
         **Phase**: Active [if phase is not mentioned, do not include it in JSON output]
         **Today**: Full body flexibility and mobility improvement 
         **Next**: Focus on shoulders, hip, and abductor regions to address tightness identified in this session.
         **PNF**: 2-3 PNF or PNF 2-3
         **Homework**: Assigned shoulder and doorway stretches. Recommend practicing these daily to enhance shoulder mobility and alleviate tightness. Consider suggesting specific resources or videos for guidance. [if homework is not mentioned, do not include it in JSON output]
-        **Details**: This is the details of the notes. Capturing all the intricacies of the note - the client's conversation, discussions during the session, reasons and other information stated, it should emcompass the inner detail of the session; keeping the tone
+        **Details**: This is the details of the notes. Capturing all the intricacies of the note - the client's conversation, discussions during the session, reasons and other information stated, MAPS and other information, it should emcompass the inner detail of the session; keeping the tone
         **Recommendation**: 4x50 or 4x25 minutes, or some sort of recommendation [if not provided, do not include it in JSON output]
         **Considerations**: Ayesha's long hours at the computer may contribute to her shoulder tension; discussing ergonomic adjustments or breaks during work hours could be beneficial in future sessions.[if not provided, do not include it in JSON output]
         **Missing Information**:The Class, Phase, what was done in the session and next plan were not mentioned
@@ -211,7 +217,7 @@ def format_notes(notes):
                     },
                     {
                         "role": "user",
-                        "content": prompt.format(notes=notes),
+                        "content": prompt.format(context=context,notes=notes),
                     },
                 ],
                 temperature=0,
