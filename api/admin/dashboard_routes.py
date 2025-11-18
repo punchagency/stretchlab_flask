@@ -25,7 +25,7 @@ routes = Blueprint("dashboard", __name__)
 def get_bookings_info(token):
     try:
         user_data = decode_jwt_token(token)
-        
+
         # Get user's admin_id
         user_info = (
             supabase.table("users")
@@ -44,7 +44,7 @@ def get_bookings_info(token):
             .single()
             .execute()
         )
-        
+
         if not business.data:
             return jsonify({"message": "Business not found", "status": "error"}), 404
 
@@ -59,14 +59,16 @@ def get_bookings_info(token):
             .single()
             .execute()
         )
-        
+
         if not config.data:
             return jsonify({"message": "No config id found", "status": "error"}), 404
 
         config_id = config.data["id"]
 
         # Calculate date ranges
-        first_day_this_month = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        first_day_this_month = datetime.now().replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
+        )
         first_day_last_month = (first_day_this_month - timedelta(days=1)).replace(day=1)
         year = first_day_this_month.year
         month = first_day_this_month.month
@@ -82,7 +84,9 @@ def get_bookings_info(token):
             .lt("created_at", first_day_next_month.strftime("%Y-%m-%d"))
             .execute()
         )
-        bookings_in_month = bookings_this_month.count if bookings_this_month.count is not None else 0
+        bookings_in_month = (
+            bookings_this_month.count if bookings_this_month.count is not None else 0
+        )
 
         bookings_last_month = (
             supabase.table("robot_process_automation_notes_records")
@@ -92,7 +96,9 @@ def get_bookings_info(token):
             .lt("created_at", first_day_this_month.strftime("%Y-%m-%d"))
             .execute()
         )
-        bookings_in_last_month = bookings_last_month.count if bookings_last_month.count is not None else 0
+        bookings_in_last_month = (
+            bookings_last_month.count if bookings_last_month.count is not None else 0
+        )
 
         # Calculate aggregation
         if bookings_in_month == 0 and bookings_in_last_month == 0:
@@ -116,10 +122,11 @@ def get_bookings_info(token):
         }
 
         return bookings_info
-        
+
     except Exception as e:
         logging.error(f"Error in get_bookings_info: {str(e)}")
-        return {"error": str(e)} 
+        return {"error": str(e)}
+
 
 def number_of_subscribed(user_id):
     try:
@@ -129,16 +136,16 @@ def number_of_subscribed(user_id):
             .select("admin_id, note_taking_active, robot_process_automation_active")
             .execute()
         )
-        
+
         note_active_ids = set()
         rpa_active_ids = set()
-        
-        for business in (businesses.data or []):
+
+        for business in businesses.data or []:
             if business.get("note_taking_active"):
                 note_active_ids.add(business["admin_id"])
             if business.get("robot_process_automation_active"):
                 rpa_active_ids.add(business["admin_id"])
-        
+
         any_active_ids = note_active_ids.union(rpa_active_ids)
 
         # Get subscribed flexologists
@@ -152,10 +159,10 @@ def number_of_subscribed(user_id):
         )
 
         number_of_subscribed_flexologists = len(subscribed_flexologists.data or [])
-        
+
         subscribed_locations = 0
         average_number_of_locations_per_business = 0
-        
+
         if rpa_active_ids:
             # Single query to get ALL locations at once instead of looping
             rpa_active_list = list(rpa_active_ids)
@@ -165,15 +172,17 @@ def number_of_subscribed(user_id):
                 .in_("admin_id", rpa_active_list)
                 .execute()
             )
-            
-            for location_record in (locations_query.data or []):
+
+            for location_record in locations_query.data or []:
                 if location_record.get("selected_locations"):
                     try:
                         locations = json.loads(location_record["selected_locations"])
-                        subscribed_locations += len(locations) if isinstance(locations, list) else 0
+                        subscribed_locations += (
+                            len(locations) if isinstance(locations, list) else 0
+                        )
                     except (json.JSONDecodeError, TypeError):
                         continue
-            
+
             average_number_of_locations_per_business = (
                 subscribed_locations / len(rpa_active_ids) if rpa_active_ids else 0
             )
@@ -184,12 +193,15 @@ def number_of_subscribed(user_id):
             "unique_businesses_with_any_subscription": len(any_active_ids),
             "number_of_subscribed_flexologists": number_of_subscribed_flexologists,
             "number_of_subscribed_locations": subscribed_locations,
-            "average_number_of_locations_per_business": round(average_number_of_locations_per_business, 2),
+            "average_number_of_locations_per_business": round(
+                average_number_of_locations_per_business, 2
+            ),
         }
-        
+
     except Exception as e:
         logging.error(f"Error in number_of_subscribed: {str(e)}")
         return {"error": str(e)}
+
 
 @routes.route("/first_row", methods=["GET"])
 @require_bearer_token
@@ -197,42 +209,55 @@ def get_first_row(token):
     try:
         user_data = decode_jwt_token(token)
         if user_data["role_id"] == 3:
-            return jsonify({
-                "error": "You are not authorized to see this page",
-                "status": "error",
-            }), 401
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
 
         show_others = user_data["role_id"] == 1
-        
+
         # Execute queries in parallel
         with ThreadPoolExecutor(max_workers=3) as executor:
             # Always fetch bookings_info
             bookings_future = executor.submit(get_bookings_info, token)
-            
+
             # Only fetch these if needed
             if show_others:
                 balance_future = executor.submit(get_balance_for_month)
-                subscriptions_future = executor.submit(number_of_subscribed, user_data["user_id"])
-            
+                subscriptions_future = executor.submit(
+                    number_of_subscribed, user_data["user_id"]
+                )
+
             # Wait for results
             bookings_info = bookings_future.result()
-            
+
             data_to_send = {
                 "bookings_info": bookings_info,
             }
-            
+
             if show_others:
                 data_to_send["balance_info"] = balance_future.result()
                 data_to_send["subscriptions_info"] = subscriptions_future.result()
 
-        return jsonify({
-            "status": "success",
-            "data": data_to_send,
-        }), 200
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "data": data_to_send,
+                }
+            ),
+            200,
+        )
 
     except Exception as e:
         logging.error(f"Error in POST api/admin/dashboard/first_row: {str(e)}")
         return jsonify({"error": str(e), "status": "error"}), 500
+
 
 @routes.route("/activities", methods=["GET"])
 @require_bearer_token
@@ -240,10 +265,15 @@ def get_activities(token):
     try:
         user_data = decode_jwt_token(token)
         if user_data["role_id"] == 3:
-            return jsonify({
-                "error": "You are not authorized to see this page",
-                "status": "error",
-            }), 401
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
 
         # Get user's admin_id
         user_info = (
@@ -255,10 +285,37 @@ def get_activities(token):
         )
         user_id = user_info.data["admin_id"]
 
+        # Get config and analyzed bookings
+        config_result = (
+            supabase.table("robot_process_automation_config")
+            .select("id, excluded_flexologists")
+            .eq("admin_id", user_id)
+            .single()
+            .execute()
+        )
+
+        config_data = config_result.data
+        excluded_flexologists_list = []
+        excluded_flexologists = set()
+
+        if config_data and config_data.get("excluded_flexologists"):
+            try:
+                excluded_flexologists_list = [
+                    name
+                    for name in json.loads(config_data["excluded_flexologists"])
+                    if isinstance(name, str) and name.strip()
+                ]
+                excluded_flexologists = {
+                    name.strip().lower() for name in excluded_flexologists_list
+                }
+            except Exception:
+                excluded_flexologists_list = []
+                excluded_flexologists = set()
+
         # Get all flexologist IDs
         flexologists = (
             supabase.table("users")
-            .select("id")
+            .select("id, full_name")
             .eq("role_id", 3)
             .eq("admin_id", user_id)
             .execute()
@@ -268,14 +325,24 @@ def get_activities(token):
         notes_submitted_per_flexologist = None
         notes_submitted_per_location = None
 
-        if flexologists.data:
-            flexologist_ids = [f["id"] for f in flexologists.data]
-            
+        flexologists_data = flexologists.data or []
+
+        if excluded_flexologists:
+            flexologists_data = [
+                flex
+                for flex in flexologists_data
+                if (flex.get("full_name") or "").strip().lower()
+                not in excluded_flexologists
+            ]
+
+        if flexologists_data:
+            flexologist_ids = [f["id"] for f in flexologists_data]
+
             # Fetch ALL records with pagination, but in ONE query per batch instead of per flexologist
             all_notes_submitted = []
             offset = 0
             limit = 1000
-            
+
             while True:
                 notes_submitted = (
                     supabase.table("clubready_bookings")
@@ -286,20 +353,24 @@ def get_activities(token):
                     .execute()
                 )
                 all_notes_submitted.extend(notes_submitted.data)
-                
+
                 if len(notes_submitted.data) < limit:
                     break
                 offset += limit
-            
+
             if all_notes_submitted:
                 from collections import defaultdict
+
                 notes_submitted_per_flexologist = defaultdict(int)
                 notes_submitted_per_location = defaultdict(int)
-                
+
                 for booking in all_notes_submitted:
-                    notes_submitted_per_flexologist[booking["flexologist_name"].lower()] += 1
+                    flex_name = (booking.get("flexologist_name") or "").lower()
+                    if excluded_flexologists and flex_name in excluded_flexologists:
+                        continue
+                    notes_submitted_per_flexologist[flex_name] += 1
                     notes_submitted_per_location[booking["location"].lower()] += 1
-                
+
                 notes_submitted_per_flexologist = dict(notes_submitted_per_flexologist)
                 notes_submitted_per_location = dict(notes_submitted_per_location)
                 notes_submitted_with_app = len(all_notes_submitted)
@@ -308,48 +379,47 @@ def get_activities(token):
                 notes_submitted_per_flexologist = {}
                 notes_submitted_per_location = {}
 
-        # Get config and analyzed bookings
-        config_result = (
-            supabase.table("robot_process_automation_config")
-            .select("id")
-            .eq("admin_id", user_id)
-            .single()
-            .execute()
-        )
-
         total_analysed_bookings = None
         notes_analysed_per_location = None
         notes_analysed_per_flexologist = None
 
-        if config_result.data:
+        if config_data:
             # Fetch ALL records with pagination
             all_analysed_bookings = []
             offset = 0
             limit = 1000
-            
+
             while True:
-                analysed_bookings = (
+                analysed_query = (
                     supabase.table("robot_process_automation_notes_records")
                     .select("flexologist_name, location")
-                    .eq("config_id", config_result.data["id"])
-                    .range(offset, offset + limit - 1)
-                    .execute()
+                    .eq("config_id", config_data["id"])
                 )
+
+                if excluded_flexologists_list:
+                    analysed_query = analysed_query.not_.in_(
+                        "flexologist_name", excluded_flexologists_list
+                    )
+
+                analysed_bookings = analysed_query.range(
+                    offset, offset + limit - 1
+                ).execute()
                 all_analysed_bookings.extend(analysed_bookings.data)
-                
+
                 if len(analysed_bookings.data) < limit:
                     break
                 offset += limit
 
             if all_analysed_bookings:
                 from collections import defaultdict
+
                 notes_analysed_per_location = defaultdict(int)
                 notes_analysed_per_flexologist = defaultdict(int)
-                
+
                 for booking in all_analysed_bookings:
                     notes_analysed_per_location[booking["location"]] += 1
                     notes_analysed_per_flexologist[booking["flexologist_name"]] += 1
-                
+
                 notes_analysed_per_location = dict(notes_analysed_per_location)
                 notes_analysed_per_flexologist = dict(notes_analysed_per_flexologist)
                 total_analysed_bookings = len(all_analysed_bookings)
@@ -358,21 +428,27 @@ def get_activities(token):
                 notes_analysed_per_location = {}
                 notes_analysed_per_flexologist = {}
 
-        return jsonify({
-            "status": "success",
-            "data": {
-                "notes_submitted_with_app": notes_submitted_with_app,
-                "total_analysed_bookings": total_analysed_bookings,
-                "notes_analysed_per_location": notes_analysed_per_location,
-                "notes_analysed_per_flexologist": notes_analysed_per_flexologist,
-                "notes_submitted_per_flexologist": notes_submitted_per_flexologist,
-                "notes_submitted_per_location": notes_submitted_per_location,
-            },
-        }), 200
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "data": {
+                        "notes_submitted_with_app": notes_submitted_with_app,
+                        "total_analysed_bookings": total_analysed_bookings,
+                        "notes_analysed_per_location": notes_analysed_per_location,
+                        "notes_analysed_per_flexologist": notes_analysed_per_flexologist,
+                        "notes_submitted_per_flexologist": notes_submitted_per_flexologist,
+                        "notes_submitted_per_location": notes_submitted_per_location,
+                    },
+                }
+            ),
+            200,
+        )
 
     except Exception as e:
         logging.error(f"Error in POST api/admin/dashboard/activities: {str(e)}")
         return jsonify({"error": str(e), "status": "error"}), 500
+
 
 @routes.route("/get_chart_filters", methods=["GET"])
 @require_bearer_token
@@ -380,10 +456,15 @@ def get_chart_filters(token):
     try:
         user_data = decode_jwt_token(token)
         if user_data["role_id"] == 3:
-            return jsonify({
-                "error": "You are not authorized to see this page",
-                "status": "error",
-            }), 401
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
 
         user_id = user_data["user_id"]
         filter_by = request.args.get("filter_by", None)
@@ -396,14 +477,19 @@ def get_chart_filters(token):
             .single()
             .execute()
         )
-        
+
         role_id = user_info.data["role_id"]
-        
+
         if role_id not in [1, 2, 4, 8]:
-            return jsonify({
-                "error": "You are not authorized to see this page",
-                "status": "error",
-            }), 401
+            return (
+                jsonify(
+                    {
+                        "error": "You are not authorized to see this page",
+                        "status": "error",
+                    }
+                ),
+                401,
+            )
 
         # Determine the admin_id to use
         admin_id = user_info.data["admin_id"] if role_id in [4, 8] else user_id
@@ -414,7 +500,7 @@ def get_chart_filters(token):
         # Query 1: Get config_id
         config_result = (
             supabase.table("robot_process_automation_config")
-            .select("id, selected_locations")
+            .select("id, selected_locations, excluded_flexologists")
             .eq("admin_id", admin_id)
             .single()
             .execute()
@@ -429,6 +515,11 @@ def get_chart_filters(token):
             if config_result.data["selected_locations"]
             else []
         )
+        excluded_flex = (
+            json.loads(config_result.data["excluded_flexologists"])
+            if config_result.data["excluded_flexologists"]
+            else []
+        )
 
         # Query 2: Get distinct flexologists
         flexologists_result = (
@@ -437,12 +528,19 @@ def get_chart_filters(token):
             .eq("config_id", config_id)
             .execute()
         )
-        
-        flexologists = sorted(set(
-            f["flexologist_name"] 
-            for f in flexologists_result.data 
-            if f.get("flexologist_name")
-        )) if flexologists_result.data else []
+
+        flexologists = (
+            sorted(
+                set(
+                    f["flexologist_name"]
+                    for f in flexologists_result.data
+                    if f.get("flexologist_name")
+                    and f.get("flexologist_name") not in excluded_flex
+                )
+            )
+            if flexologists_result.data
+            else []
+        )
 
         # Query 3: Get business info
         business_info = (
@@ -453,7 +551,7 @@ def get_chart_filters(token):
             .execute()
         )
 
-        # Build filters 
+        # Build filters
         if not filter_by:
             filters = [
                 {"label": "Total Client Visits", "value": "total_client_visits"},
@@ -470,18 +568,24 @@ def get_chart_filters(token):
                 {"label": "% App Submissions", "value": "percentage_app_submission"},
             ] + filters
 
-        return jsonify({
-            "status": "success",
-            "data": {
-                "flexologists": flexologists,
-                "locations": locations,
-                "filters": filters,
-            }
-        }), 200
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "data": {
+                        "flexologists": flexologists,
+                        "locations": locations,
+                        "filters": filters,
+                    },
+                }
+            ),
+            200,
+        )
 
     except Exception as e:
         logging.error(f"Error in POST api/admin/dashboard/get_chart_filters: {str(e)}")
         return jsonify({"error": str(e), "status": "error"}), 500
+
 
 @routes.route("/second_row", methods=["GET"])
 @require_bearer_token
@@ -545,15 +649,36 @@ def get_second_row(token):
 
         get_config_id = (
             supabase.table("robot_process_automation_config")
-            .select("id")
+            .select("id, excluded_flexologists")
             .eq("admin_id", user_id)
             .execute()
         )
         if not get_config_id.data:
             return jsonify({"error": "No config id found", "status": "error"}), 400
 
-        def fetch_total_visits(supabase, get_config_id, start_date, end_date, location=None, flexologist=None, limit=1000):
+        print(start_date, end_date)
+
+        def fetch_total_visits(
+            supabase,
+            get_config_id,
+            start_date,
+            end_date,
+            location=None,
+            flexologist=None,
+            limit=1000,
+        ):
             total_visits = []
+
+            # Prepare excluded flexologists list (if any)
+            excluded_flexologists_raw = get_config_id.data[0].get(
+                "excluded_flexologists"
+            )
+            excluded_flexologists = None
+            if excluded_flexologists_raw:
+                try:
+                    excluded_flexologists = json.loads(excluded_flexologists_raw)
+                except Exception:
+                    excluded_flexologists = None
 
             # Base query
             base_query = (
@@ -564,6 +689,12 @@ def get_second_row(token):
                 .gte("appointment_date", start_date)
                 .lt("appointment_date", end_date)
             )
+
+            # Apply exclusion filter only when we have a valid list
+            if excluded_flexologists:
+                base_query = base_query.not_.in_(
+                    "flexologist_name", excluded_flexologists
+                )
 
             # Apply filters conditionally
             if location:
@@ -585,8 +716,28 @@ def get_second_row(token):
 
             return total_visits
 
-        def fetch_quality_bookings(supabase, get_config_id, start_date, end_date, first_timer, location=None, flexologist=None, limit=1000):
+        def fetch_quality_bookings(
+            supabase,
+            get_config_id,
+            start_date,
+            end_date,
+            first_timer,
+            location=None,
+            flexologist=None,
+            limit=1000,
+        ):
             all_bookings = []
+
+            # Prepare excluded flexologists list (if any)
+            excluded_flexologists_raw = get_config_id.data[0].get(
+                "excluded_flexologists"
+            )
+            excluded_flexologists = None
+            if excluded_flexologists_raw:
+                try:
+                    excluded_flexologists = json.loads(excluded_flexologists_raw)
+                except Exception:
+                    excluded_flexologists = None
 
             # Base query
             base_query = (
@@ -598,6 +749,12 @@ def get_second_row(token):
                 .gte("appointment_date", start_date)
                 .lt("appointment_date", end_date)
             )
+
+            # Apply exclusion filter only when we have a valid list
+            if excluded_flexologists:
+                base_query = base_query.not_.in_(
+                    "flexologist_name", excluded_flexologists
+                )
 
             # Apply filters conditionally
             if location:
@@ -633,10 +790,30 @@ def get_second_row(token):
                     break
                 offset += limit
 
+            print(len(all_bookings))
+
             return all_bookings
 
-        def fetch_aggregate_quality_bookings(supabase, get_config_id, start_date, end_date, location=None, flexologist=None, limit=1000):
+        def fetch_aggregate_quality_bookings(
+            supabase,
+            get_config_id,
+            start_date,
+            end_date,
+            location=None,
+            flexologist=None,
+            limit=1000,
+        ):
             all_bookings = []
+            # Prepare excluded flexologists list (if any)
+            excluded_flexologists_raw = get_config_id.data[0].get(
+                "excluded_flexologists"
+            )
+            excluded_flexologists = None
+            if excluded_flexologists_raw:
+                try:
+                    excluded_flexologists = json.loads(excluded_flexologists_raw)
+                except Exception:
+                    excluded_flexologists = None
 
             # Base query (no first_timer filter for aggregate)
             base_query = (
@@ -647,6 +824,12 @@ def get_second_row(token):
                 .gte("appointment_date", start_date)
                 .lt("appointment_date", end_date)
             )
+
+            # Apply exclusion filter only when we have a valid list
+            if excluded_flexologists:
+                base_query = base_query.not_.in_(
+                    "flexologist_name", excluded_flexologists
+                )
 
             # Apply filters conditionally
             if location:
@@ -685,12 +868,15 @@ def get_second_row(token):
             return all_bookings
 
         if dataset == "total_client_visits":
-            total_visits = fetch_total_visits(supabase, get_config_id, start_date, end_date, location, flexologist)
+            total_visits = fetch_total_visits(
+                supabase, get_config_id, start_date, end_date, location, flexologist
+            )
 
             data = handle_total_visits(duration, total_visits, start_date, end_date)
             return jsonify({"status": "success", "data": data["data"]}), 200
 
         if dataset == "percentage_app_submission":
+
             def fetch_paginated_data(query, limit=1000):
                 """Fetch all data from a Supabase query using pagination."""
                 all_data = []
@@ -704,10 +890,29 @@ def get_second_row(token):
                     offset += limit
                 return all_data
 
-            def fetch_bookings(supabase, user_id, get_config_id, start_date, end_date, location=None, flexologist=None):
+            def fetch_bookings(
+                supabase,
+                user_id,
+                get_config_id,
+                start_date,
+                end_date,
+                location=None,
+                flexologist=None,
+            ):
                 all_bookings = []
                 submitted_by_app = []
                 limit = 1000
+
+                # Prepare excluded flexologists list (if any)
+                excluded_flexologists_raw = get_config_id.data[0].get(
+                    "excluded_flexologists"
+                )
+                excluded_flexologists = None
+                if excluded_flexologists_raw:
+                    try:
+                        excluded_flexologists = json.loads(excluded_flexologists_raw)
+                    except Exception:
+                        excluded_flexologists = None
 
                 # Common base for robot_process_automation_notes_records
                 base_notes_query = (
@@ -731,17 +936,30 @@ def get_second_row(token):
                 # ----------------------------
                 # Case 1: Location is provided
                 # ----------------------------
+                # Apply exclusion filter only when we have a valid list
+                if excluded_flexologists:
+                    base_notes_query = base_notes_query.not_.in_(
+                        "flexologist_name", excluded_flexologists
+                    )
+                    base_bookings_query = base_bookings_query.not_.in_(
+                        "flexologist_name", excluded_flexologists
+                    )
+
                 if location:
                     if location == "all":
                         # Fetch all locations' notes
-                        all_bookings.extend(fetch_paginated_data(base_notes_query, limit))
+                        all_bookings.extend(
+                            fetch_paginated_data(base_notes_query, limit)
+                        )
 
                         # Fetch all flexologists for this admin
                         flexologists = (
+                            # Only omit the user if disabled_at exists and start_date > disabled_at
                             supabase.table("users")
                             .select("id")
                             .eq("admin_id", user_id)
                             .eq("role_id", 3)
+                            .or_(f"disabled_at.is.null,disabled_at.gte.{start_date}")
                             .execute()
                         ).data
 
@@ -750,17 +968,27 @@ def get_second_row(token):
 
                             # Batch IDs to respect Supabase filter size
                             for i in range(0, len(flexologist_ids), 1000):
-                                batch_ids = flexologist_ids[i:i+1000]
-                                flexologist_query = base_bookings_query.in_("user_id", batch_ids)
-                                submitted_by_app.extend(fetch_paginated_data(flexologist_query, limit))
+                                batch_ids = flexologist_ids[i : i + 1000]
+                                flexologist_query = base_bookings_query.in_(
+                                    "user_id", batch_ids
+                                )
+                                submitted_by_app.extend(
+                                    fetch_paginated_data(flexologist_query, limit)
+                                )
 
                     else:
                         # Specific location
                         location_notes_query = base_notes_query.eq("location", location)
-                        all_bookings.extend(fetch_paginated_data(location_notes_query, limit))
+                        all_bookings.extend(
+                            fetch_paginated_data(location_notes_query, limit)
+                        )
 
-                        location_bookings_query = base_bookings_query.eq("location", location)
-                        submitted_by_app.extend(fetch_paginated_data(location_bookings_query, limit))
+                        location_bookings_query = base_bookings_query.eq(
+                            "location", location
+                        )
+                        submitted_by_app.extend(
+                            fetch_paginated_data(location_bookings_query, limit)
+                        )
 
                 # ----------------------------
                 # Case 2: Flexologist is provided
@@ -768,7 +996,9 @@ def get_second_row(token):
                 else:
                     if flexologist == "all":
                         # Fetch all notes (all flexologists)
-                        all_bookings.extend(fetch_paginated_data(base_notes_query, limit))
+                        all_bookings.extend(
+                            fetch_paginated_data(base_notes_query, limit)
+                        )
 
                         # Get all flexologists for this admin
                         flexologists = (
@@ -776,26 +1006,47 @@ def get_second_row(token):
                             .select("id")
                             .eq("admin_id", user_id)
                             .eq("role_id", 3)
+                            .or_(f"disabled_at.is.null,disabled_at.gte.{start_date}")
                             .execute()
                         ).data
 
                         if flexologists:
                             flexologist_ids = [f["id"] for f in flexologists]
                             for i in range(0, len(flexologist_ids), 1000):
-                                batch_ids = flexologist_ids[i:i+1000]
-                                flexologist_query = base_bookings_query.in_("user_id", batch_ids)
-                                submitted_by_app.extend(fetch_paginated_data(flexologist_query, limit))
+                                batch_ids = flexologist_ids[i : i + 1000]
+                                flexologist_query = base_bookings_query.in_(
+                                    "user_id", batch_ids
+                                )
+                                submitted_by_app.extend(
+                                    fetch_paginated_data(flexologist_query, limit)
+                                )
                     else:
                         # Specific flexologist
-                        flexologist_notes_query = base_notes_query.eq("flexologist_name", flexologist)
-                        all_bookings.extend(fetch_paginated_data(flexologist_notes_query, limit))
+                        flexologist_notes_query = base_notes_query.eq(
+                            "flexologist_name", flexologist
+                        )
+                        all_bookings.extend(
+                            fetch_paginated_data(flexologist_notes_query, limit)
+                        )
 
-                        flexologist_bookings_query = base_bookings_query.eq("flexologist_name", flexologist)
-                        submitted_by_app.extend(fetch_paginated_data(flexologist_bookings_query, limit))
+                        flexologist_bookings_query = base_bookings_query.eq(
+                            "flexologist_name", flexologist
+                        )
+                        submitted_by_app.extend(
+                            fetch_paginated_data(flexologist_bookings_query, limit)
+                        )
 
                 return all_bookings, submitted_by_app
 
-            all_bookings, submitted_by_app = fetch_bookings(supabase, user_id, get_config_id, start_date, end_date, location, flexologist)
+            all_bookings, submitted_by_app = fetch_bookings(
+                supabase,
+                user_id,
+                get_config_id,
+                start_date,
+                end_date,
+                location,
+                flexologist,
+            )
             data = handle_percentage_of_submitted_bookings(
                 duration, all_bookings, submitted_by_app, start_date, end_date
             )
@@ -809,14 +1060,22 @@ def get_second_row(token):
             )
             get_config_id = (
                 supabase.table("robot_process_automation_config")
-                .select("id")
+                .select("id, excluded_flexologists")
                 .eq("admin_id", user_id)
                 .execute()
             )
             if not get_config_id.data:
                 return jsonify({"error": "No config id found", "status": "error"}), 400
 
-            all_bookings = fetch_quality_bookings(supabase, get_config_id, start_date, end_date, first_timer, location, flexologist)
+            all_bookings = fetch_quality_bookings(
+                supabase,
+                get_config_id,
+                start_date,
+                end_date,
+                first_timer,
+                location,
+                flexologist,
+            )
 
             data = handle_avg_visit_quality_percentage(
                 duration, all_bookings, start_date, end_date
@@ -826,14 +1085,16 @@ def get_second_row(token):
         if dataset == "avg_aggregate_note_quality_percentage":
             get_config_id = (
                 supabase.table("robot_process_automation_config")
-                .select("id")
+                .select("id, excluded_flexologists")
                 .eq("admin_id", user_id)
                 .execute()
             )
             if not get_config_id.data:
                 return jsonify({"error": "No config id found", "status": "error"}), 400
 
-            all_bookings = fetch_aggregate_quality_bookings(supabase, get_config_id, start_date, end_date, location, flexologist)
+            all_bookings = fetch_aggregate_quality_bookings(
+                supabase, get_config_id, start_date, end_date, location, flexologist
+            )
 
             data = handle_avg_aggregate_note_quality_percentage(
                 duration, all_bookings, start_date, end_date
@@ -861,8 +1122,31 @@ def get_third_row(token):
             .single()
             .execute()
         )
+
+        # get config details
         user_id = user_info.data["admin_id"]
 
+        get_config_id = (
+            supabase.table("robot_process_automation_config")
+            .select("id, excluded_flexologists")
+            .eq("admin_id", user_id)
+            .execute()
+        )
+
+        if not get_config_id.data:
+            return jsonify({"status": "success", "data": []}), 200
+
+        excluded_flexologists_raw = get_config_id.data[0].get("excluded_flexologists")
+        excluded_flexologists = set()
+        if excluded_flexologists_raw:
+            try:
+                excluded_flexologists = {
+                    name.strip().lower()
+                    for name in json.loads(excluded_flexologists_raw)
+                    if isinstance(name, str)
+                }
+            except Exception:
+                excluded_flexologists = set()
         # Get flexologists
         flexologists = (
             supabase.table("users")
@@ -873,7 +1157,17 @@ def get_third_row(token):
             .execute()
         )
 
-        if not flexologists.data:
+        flexologists_data = flexologists.data or []
+
+        if excluded_flexologists:
+            flexologists_data = [
+                flex
+                for flex in flexologists_data
+                if (flex.get("full_name") or "").strip().lower()
+                not in excluded_flexologists
+            ]
+
+        if not flexologists_data:
             return jsonify({"status": "success", "data": []}), 200
 
         # Get date range
@@ -881,10 +1175,12 @@ def get_third_row(token):
             start_date_str = request.args.get("start_date")
             end_date_str = request.args.get("end_date")
             if not start_date_str or not end_date_str:
-                return jsonify({
-                    "error": "Start and end date are required",
-                    "status": "error"
-                }), 400
+                return (
+                    jsonify(
+                        {"error": "Start and end date are required", "status": "error"}
+                    ),
+                    400,
+                )
             start_date, end_date = get_start_and_end_date(
                 duration, start_date_str, end_date_str
             )
@@ -892,8 +1188,8 @@ def get_third_row(token):
             start_date, end_date = get_start_and_end_date(duration)
 
         # Get ALL bookings for ALL flexologists in ONE query
-        flexologist_ids = [flex["id"] for flex in flexologists.data]
-        
+        flexologist_ids = [flex["id"] for flex in flexologists_data]
+
         all_bookings = (
             supabase.table("clubready_bookings")
             .select("user_id, submitted")
@@ -905,19 +1201,20 @@ def get_third_row(token):
 
         # Group bookings by flexologist using a dictionary
         from collections import defaultdict
+
         bookings_by_flex = defaultdict(lambda: {"total": 0, "submitted": 0})
-        
-        for booking in (all_bookings.data or []):
+
+        for booking in all_bookings.data or []:
             user_id = booking["user_id"]
             bookings_by_flex[user_id]["total"] += 1
             if booking.get("submitted"):
                 bookings_by_flex[user_id]["submitted"] += 1
 
         # Add booking stats to each flexologist
-        for flex in flexologists.data:
+        for flex in flexologists_data:
             flex_id = flex["id"]
             stats = bookings_by_flex[flex_id]
-            
+
             flex["bookings"] = stats["total"]
             flex["submitted_bookings"] = stats["submitted"]
             flex["percentage_submitted_bookings"] = (
@@ -927,13 +1224,14 @@ def get_third_row(token):
             )
 
         # Sort by bookings (descending)
-        flexologists.data.sort(key=lambda x: x["bookings"], reverse=True)
+        flexologists_data.sort(key=lambda x: x["bookings"], reverse=True)
 
-        return jsonify({"status": "success", "data": flexologists.data}), 200
-        
+        return jsonify({"status": "success", "data": flexologists_data}), 200
+
     except Exception as e:
         logging.error(f"Error in POST api/admin/dashboard/third_row: {str(e)}")
         return jsonify({"error": str(e), "status": "error"}), 500
+
 
 @routes.route("/fourth_row", methods=["GET"])
 @require_bearer_token
@@ -941,7 +1239,7 @@ def get_fourth_row(token):
     try:
         user_data = decode_jwt_token(token)
         user_id = user_data["user_id"]
-        
+
         # Get user info
         get_user_info = (
             supabase.table("users")
@@ -950,7 +1248,7 @@ def get_fourth_row(token):
             .single()
             .execute()
         )
-        
+
         if not get_user_info.data:
             return jsonify({"error": "User not found", "status": "error"}), 404
 
@@ -959,7 +1257,7 @@ def get_fourth_row(token):
 
         # Get all businesses
         businesses_info = supabase.table("businesses").select("*").execute()
-        
+
         if not businesses_info.data:
             return jsonify({"error": "Businesses not found", "status": "error"}), 404
 
@@ -978,8 +1276,9 @@ def get_fourth_row(token):
 
         # Group flexologists by business (admin_id)
         from collections import defaultdict
+
         flexologists_by_business = defaultdict(int)
-        for flex in (all_flexologists.data or []):
+        for flex in all_flexologists.data or []:
             flexologists_by_business[flex["admin_id"]] += 1
 
         # Fetch ALL RPA configs for ALL businesses in ONE query
@@ -992,11 +1291,17 @@ def get_fourth_row(token):
 
         # Group RPA configs by business
         rpa_configs_by_business = {}
-        for config in (all_rpa_configs.data or []):
+        for config in all_rpa_configs.data or []:
             admin_id = config["admin_id"]
             try:
-                locations = json.loads(config["selected_locations"]) if config.get("selected_locations") else []
-                rpa_configs_by_business[admin_id] = len(locations) if isinstance(locations, list) else 0
+                locations = (
+                    json.loads(config["selected_locations"])
+                    if config.get("selected_locations")
+                    else []
+                )
+                rpa_configs_by_business[admin_id] = (
+                    len(locations) if isinstance(locations, list) else 0
+                )
             except (json.JSONDecodeError, TypeError):
                 rpa_configs_by_business[admin_id] = 0
 
@@ -1004,22 +1309,33 @@ def get_fourth_row(token):
         business_information = []
         for business in businesses_info.data:
             business_id = business["admin_id"]
-            
-            business_information.append({
-                "business_username": business["username"],
-                "business_id": business_id,
-                "business_note_sub_status": business["note_taking_subscription_status"],
-                "business_rpa_sub_status": business["robot_process_automation_subscription_status"],
-                "business_created_at": business["created_at"],
-                "buisness_flexologists_count": flexologists_by_business.get(business_id, 0),
-                "business_selected_locations": rpa_configs_by_business.get(business_id, 0),
-            })
+
+            business_information.append(
+                {
+                    "business_username": business["username"],
+                    "business_id": business_id,
+                    "business_note_sub_status": business[
+                        "note_taking_subscription_status"
+                    ],
+                    "business_rpa_sub_status": business[
+                        "robot_process_automation_subscription_status"
+                    ],
+                    "business_created_at": business["created_at"],
+                    "buisness_flexologists_count": flexologists_by_business.get(
+                        business_id, 0
+                    ),
+                    "business_selected_locations": rpa_configs_by_business.get(
+                        business_id, 0
+                    ),
+                }
+            )
 
         return jsonify({"status": "success", "data": business_information}), 200
-        
+
     except Exception as e:
         logging.error(f"Error in POST api/admin/dashboard/fourth_row: {str(e)}")
         return jsonify({"error": str(e), "status": "error"}), 500
+
 
 @routes.route("/get_business_info", methods=["POST"])
 @require_bearer_token
@@ -1061,7 +1377,9 @@ def get_business_info(token):
 
         business_username = business_info["username"]
         business_note_sub_status = business_info["note_taking_subscription_status"]
-        business_rpa_sub_status = business_info["robot_process_automation_subscription_status"]
+        business_rpa_sub_status = business_info[
+            "robot_process_automation_subscription_status"
+        ]
         business_created_at = business_info["created_at"]
 
         # Get flexologists
@@ -1092,7 +1410,7 @@ def get_business_info(token):
 
             # Get ALL bookings for ALL flexologists in ONE query
             flexologist_ids = [flex["id"] for flex in get_flexologists_info.data]
-            
+
             all_bookings = (
                 supabase.table("clubready_bookings")
                 .select("user_id, submitted, location")
@@ -1104,37 +1422,41 @@ def get_business_info(token):
 
             # Build a mapping: flexologist_id -> name
             flex_id_to_name = {
-                flex["id"]: flex.get("full_name") 
-                for flex in get_flexologists_info.data
+                flex["id"]: flex.get("full_name") for flex in get_flexologists_info.data
             }
 
             # Aggregate bookings by location and flexologist
             # Structure: location -> flexologist_id -> {total, submitted}
             from collections import defaultdict
-            location_data = defaultdict(lambda: {
-                "location": None,
-                "flexologists": defaultdict(lambda: {"total": 0, "submitted": 0}),
-                "total_bookings_in_location": 0,
-                "total_submitted_by_location": 0,
-            })
 
-            for booking in (all_bookings.data or []):
+            location_data = defaultdict(
+                lambda: {
+                    "location": None,
+                    "flexologists": defaultdict(lambda: {"total": 0, "submitted": 0}),
+                    "total_bookings_in_location": 0,
+                    "total_submitted_by_location": 0,
+                }
+            )
+
+            for booking in all_bookings.data or []:
                 loc = booking.get("location")
                 if not loc:
                     continue
-                
+
                 user_id_booking = booking["user_id"]
                 is_submitted = bool(booking.get("submitted"))
-                
+
                 # Initialize location if first time seeing it
                 if location_data[loc]["location"] is None:
                     location_data[loc]["location"] = loc
-                
+
                 # Update flexologist stats
                 location_data[loc]["flexologists"][user_id_booking]["total"] += 1
                 if is_submitted:
-                    location_data[loc]["flexologists"][user_id_booking]["submitted"] += 1
-                
+                    location_data[loc]["flexologists"][user_id_booking][
+                        "submitted"
+                    ] += 1
+
                 # Update location totals
                 location_data[loc]["total_bookings_in_location"] += 1
                 if is_submitted:
@@ -1151,13 +1473,19 @@ def get_business_info(token):
                     }
                     for flex_id, counts in data["flexologists"].items()
                 ]
-                
-                locations_summary.append({
-                    "location": loc,
-                    "flexologists": flexologists_list,
-                    "total_bookings_in_location": data["total_bookings_in_location"],
-                    "total_submitted_by_location": data["total_submitted_by_location"],
-                })
+
+                locations_summary.append(
+                    {
+                        "location": loc,
+                        "flexologists": flexologists_list,
+                        "total_bookings_in_location": data[
+                            "total_bookings_in_location"
+                        ],
+                        "total_submitted_by_location": data[
+                            "total_submitted_by_location"
+                        ],
+                    }
+                )
 
         # Get RPA config info
         get_rpa_config_info = (
@@ -1194,13 +1522,21 @@ def get_business_info(token):
                 business_info["note_taking_subscription_id"]
             )
             business_note_sub_details = {
-                "price": note_taking_sub_details["items"]["data"][0]["price"]["unit_amount"],
-                "currency": note_taking_sub_details["items"]["data"][0]["price"]["currency"],
+                "price": note_taking_sub_details["items"]["data"][0]["price"][
+                    "unit_amount"
+                ],
+                "currency": note_taking_sub_details["items"]["data"][0]["price"][
+                    "currency"
+                ],
                 "quantity": note_taking_sub_details["items"]["data"][0]["quantity"],
                 "interval": note_taking_sub_details["plan"]["interval"],
                 "status": note_taking_sub_details["status"],
-                "start_date": note_taking_sub_details["items"]["data"][0]["current_period_start"],
-                "end_date": note_taking_sub_details["items"]["data"][0]["current_period_end"],
+                "start_date": note_taking_sub_details["items"]["data"][0][
+                    "current_period_start"
+                ],
+                "end_date": note_taking_sub_details["items"]["data"][0][
+                    "current_period_end"
+                ],
             }
 
         business_rpa_sub_details = None
@@ -1209,35 +1545,51 @@ def get_business_info(token):
                 business_info["robot_process_automation_subscription_id"]
             )
             business_rpa_sub_details = {
-                "price": robot_process_automation_sub_details["items"]["data"][0]["price"]["unit_amount"],
-                "currency": robot_process_automation_sub_details["items"]["data"][0]["price"]["currency"],
-                "quantity": robot_process_automation_sub_details["items"]["data"][0]["quantity"],
+                "price": robot_process_automation_sub_details["items"]["data"][0][
+                    "price"
+                ]["unit_amount"],
+                "currency": robot_process_automation_sub_details["items"]["data"][0][
+                    "price"
+                ]["currency"],
+                "quantity": robot_process_automation_sub_details["items"]["data"][0][
+                    "quantity"
+                ],
                 "interval": robot_process_automation_sub_details["plan"]["interval"],
                 "status": robot_process_automation_sub_details["status"],
-                "start_date": robot_process_automation_sub_details["items"]["data"][0]["current_period_start"],
-                "end_date": robot_process_automation_sub_details["items"]["data"][0]["current_period_end"],
+                "start_date": robot_process_automation_sub_details["items"]["data"][0][
+                    "current_period_start"
+                ],
+                "end_date": robot_process_automation_sub_details["items"]["data"][0][
+                    "current_period_end"
+                ],
             }
 
-        return jsonify({
-            "status": "success",
-            "data": {
-                "business_username": business_username,
-                "business_note_sub_status": business_note_sub_status,
-                "business_rpa_sub_status": business_rpa_sub_status,
-                "business_created_at": business_created_at,
-                "business_flexologists_count": business_flexologists_count,
-                "business_all_locations": business_all_locations,
-                "business_selected_locations": business_selected_locations,
-                "business_note_sub_details": business_note_sub_details,
-                "business_rpa_sub_details": business_rpa_sub_details,
-                "business_flexologists_info": business_flexologists_info,
-                "locations_summary": locations_summary,
-            },
-        }), 200
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "data": {
+                        "business_username": business_username,
+                        "business_note_sub_status": business_note_sub_status,
+                        "business_rpa_sub_status": business_rpa_sub_status,
+                        "business_created_at": business_created_at,
+                        "business_flexologists_count": business_flexologists_count,
+                        "business_all_locations": business_all_locations,
+                        "business_selected_locations": business_selected_locations,
+                        "business_note_sub_details": business_note_sub_details,
+                        "business_rpa_sub_details": business_rpa_sub_details,
+                        "business_flexologists_info": business_flexologists_info,
+                        "locations_summary": locations_summary,
+                    },
+                }
+            ),
+            200,
+        )
 
     except Exception as e:
         logging.error(f"Error in POST api/admin/dashboard/get_business_info: {str(e)}")
         return jsonify({"error": str(e), "status": "error"}), 500
+
 
 def init_dashboard_routes(app):
     global supabase

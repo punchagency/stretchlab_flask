@@ -1585,98 +1585,192 @@ async def fetch_bookings_for_location(page, base_url, location_text, semaphore):
 
             print(f"Found {len(all_bookings_cards)} bookings")
             for table in all_bookings_cards:
-                first_timer = (
-                    "YES"
-                    if await table.query_selector(
-                        "table tbody tr td:nth-child(3) span[title='first time visitor']"
+                check_group = await table.query_selector(
+                    "td[onclick*='cl_selectclass']"
+                )
+
+                if check_group:
+                    details = await table.query_selector("table tbody tr td")
+
+                    details_text = await details.inner_text()
+                    parts = details_text.split(":")
+                    event_date = parts[0] + ":" + parts[1] + ":" + parts[2]
+                    workout_type = parts[3].strip()
+                    flexologist_name = parts[4].strip()
+
+                    print(
+                        event_date,
+                        workout_type,
+                        flexologist_name,
+                        "event date",
                     )
-                    else "NO"
-                )
-                active = "YES"
 
-                client_name_elem = await table.query_selector(
-                    "table tbody tr td:nth-child(3) a strong"
-                )
-                client_name = (
-                    await client_name_elem.inner_text() if client_name_elem else "N/A"
-                )
+                    await details.click()
+                    await page.wait_for_selector(
+                        ".fancybox-skin",
+                        state="visible",
+                        timeout=10000,
+                    )
+                    booking_list_elem = await page.query_selector("#BookingList")
+                    booking_list_html = (
+                        await booking_list_elem.inner_html()
+                        if booking_list_elem
+                        else ""
+                    )
+                    if booking_list_html.strip() == "":
+                        continue
 
-                booking_number_elem = await table.query_selector(
-                    "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
-                )
-                booking_number = (
-                    await booking_number_elem.inner_text()
-                    if booking_number_elem
-                    else "N/A"
-                )
-                booking_id = (
-                    booking_number.lower().split("#")[1].strip()
-                    if "#" in booking_number.lower()
-                    else "N/A"
-                )
+                    iframe = page.frame_locator("iframe[src*='common/scheduling']")
 
-                workout_type_elem = await table.query_selector(
-                    "table tbody tr td:nth-child(2) div:nth-child(2) strong"
-                )
-                workout_type = (
-                    await workout_type_elem.inner_text() if workout_type_elem else "N/A"
-                )
+                    await iframe.get_by_role("table").first.wait_for(
+                        state="visible", timeout=20000
+                    )
+                    booking_tables = await iframe.locator("table").all()
 
-                flexologist_name_elem = await table.query_selector(
-                    "table tbody tr td:nth-child(2) div:nth-child(3) strong"
-                )
-                flexologist_name = (
-                    await flexologist_name_elem.inner_text()
-                    if flexologist_name_elem
-                    else "N/A"
-                )
+                    # This line removes the first table from the list of booking_tables as this is the parent table,
+                    booking_tables = booking_tables[1:]
 
-                phone_elem = await table.query_selector(
-                    "table tbody tr td:nth-child(3) .regtxt2"
-                )
-                phone_text = await phone_elem.inner_text() if phone_elem else "N/A"
-                if ":" in phone_text:
-                    phone = phone_text.split(":")[1].strip()
+                    for booking_table in booking_tables:
+                        client_name = await booking_table.locator(
+                            "a[href*='selectcust']"
+                        ).inner_text()
+                        booking_id = await booking_table.locator(
+                            "a[href*='calldetails']"
+                        ).first.inner_text()
+                        first_timer = (
+                            "YES"
+                            if booking_table.locator(
+                                "span[title*='first time visitor']"
+                            )
+                            else "NO"
+                        )
+                        active = "YES"
+                        profile_image = (
+                            "https://app.clubready.com/images/nouserphoto.png"
+                        )
+                        result = {
+                            "client_name": client_name,
+                            "booking_id": booking_id,
+                            "workout_type": workout_type,
+                            "flexologist_name": flexologist_name.lower(),
+                            "phone": "",
+                            "booking_time": (event_date.split("-")[0].strip()),
+                            "event_date": event_date.strip(),
+                            "past": False,
+                            "first_timer": first_timer,
+                            "active": active,
+                            "location": location_text,
+                            "profile_image": profile_image,
+                            "group_booking": True,
+                        }
+                        all_bookings.append(result)
                 else:
-                    phone = phone_text
+                    first_timer = (
+                        "YES"
+                        if await table.query_selector(
+                            "table tbody tr td:nth-child(3) span[title='first time visitor']"
+                        )
+                        else "NO"
+                    )
+                    active = "YES"
 
-                event_date_elem = await table.query_selector(
-                    "table tbody tr td:nth-child(2) .headertxt"
-                )
-                event_date = (
-                    await event_date_elem.inner_text() if event_date_elem else "N/A"
-                )
-                profile_elem = await table.query_selector(
-                    "table tbody tr td:first-child img"
-                )
-                profile_image = await profile_elem.get_attribute("src") if profile_elem else "N/A"
-                if profile_image != "N/A":
-                    if "nouser" in profile_image:
-                        profile_image = "https://app.clubready.com/images/nouserphoto.png"
-                    else:
-                        profile_image = f"https://clubready.blob.core.windows.net/{profile_image}"
-                
-                result = {
-                    "client_name": client_name,
-                    "booking_id": booking_id,
-                    "workout_type": workout_type,
-                    "flexologist_name": flexologist_name.split("with")[1]
-                    .strip()
-                    .lower(),
-                    "phone": phone,
-                    "booking_time": (
-                        event_date.split("-")[0].strip()
-                        if event_date != "N/A"
+                    client_name_elem = await table.query_selector(
+                        "table tbody tr td:nth-child(3) a strong"
+                    )
+                    client_name = (
+                        await client_name_elem.inner_text()
+                        if client_name_elem
                         else "N/A"
-                    ),
-                    "event_date": event_date,
-                    "past": False,
-                    "first_timer": first_timer,
-                    "active": active,
-                    "location": location_text,
-                    "profile_image": profile_image
-                }
-                all_bookings.append(result)
+                    )
+
+                    booking_number_elem = await table.query_selector(
+                        "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
+                    )
+                    booking_number = (
+                        await booking_number_elem.inner_text()
+                        if booking_number_elem
+                        else "N/A"
+                    )
+                    booking_id = (
+                        booking_number.lower().split("#")[1].strip()
+                        if "#" in booking_number.lower()
+                        else "N/A"
+                    )
+                    print(booking_id, "booking_id")
+
+                    workout_type_elem = await table.query_selector(
+                        "table tbody tr td:nth-child(2) div:nth-child(2) strong"
+                    )
+                    workout_type = (
+                        await workout_type_elem.inner_text()
+                        if workout_type_elem
+                        else "N/A"
+                    )
+
+                    flexologist_name_elem = await table.query_selector(
+                        "table tbody tr td:nth-child(2) div:nth-child(3) strong"
+                    )
+                    flexologist_name = (
+                        await flexologist_name_elem.inner_text()
+                        if flexologist_name_elem
+                        else "N/A"
+                    )
+
+                    phone_elem = await table.query_selector(
+                        "table tbody tr td:nth-child(3) .regtxt2"
+                    )
+                    phone_text = await phone_elem.inner_text() if phone_elem else "N/A"
+                    if ":" in phone_text:
+                        phone = phone_text.split(":")[1].strip()
+                    else:
+                        phone = phone_text
+
+                    print(phone, "phone")
+
+                    event_date_elem = await table.query_selector(
+                        "table tbody tr td:nth-child(2) .headertxt"
+                    )
+                    event_date = (
+                        await event_date_elem.inner_text() if event_date_elem else "N/A"
+                    )
+                    profile_elem = await table.query_selector(
+                        "table tbody tr td:first-child img"
+                    )
+                    profile_image = (
+                        await profile_elem.get_attribute("src")
+                        if profile_elem
+                        else "N/A"
+                    )
+                    if profile_image != "N/A":
+                        if "nouser" in profile_image:
+                            profile_image = (
+                                "https://app.clubready.com/images/nouserphoto.png"
+                            )
+                        else:
+                            profile_image = f"https://clubready.blob.core.windows.net/{profile_image}"
+
+                    result = {
+                        "client_name": client_name,
+                        "booking_id": booking_id,
+                        "workout_type": workout_type,
+                        "flexologist_name": flexologist_name.split("with")[1]
+                        .strip()
+                        .lower(),
+                        "phone": phone,
+                        "booking_time": (
+                            event_date.split("-")[0].strip()
+                            if event_date != "N/A"
+                            else "N/A"
+                        ),
+                        "event_date": event_date,
+                        "past": False,
+                        "first_timer": first_timer,
+                        "active": active,
+                        "location": location_text,
+                        "profile_image": profile_image,
+                        "group_booking": False,
+                    }
+                    all_bookings.append(result)
 
             return all_bookings
 
@@ -1775,111 +1869,212 @@ async def get_user_bookings_from_clubready(user_details, max_concurrency=3):
 
                             print(f"Found {len(all_bookings_cards)} bookings")
                             for table in all_bookings_cards:
-                                first_timer = (
-                                    "YES"
-                                    if await table.query_selector(
-                                        "table tbody tr td:nth-child(3) span[title='first time visitor']"
+                                # cl_selectclass(88575149, '111819068', 11/17/2025)
+                                check_group = await table.query_selector(
+                                    "td[onclick*='cl_selectclass']"
+                                )
+
+                                if check_group:
+                                    print("great")
+
+                                    details = await table.query_selector(
+                                        "table tbody tr td"
                                     )
-                                    else "NO"
-                                )
-                                active = "YES"
 
-                                client_name_elem = await table.query_selector(
-                                    "table tbody tr td:nth-child(3) a strong"
-                                )
-                                client_name = (
-                                    await client_name_elem.inner_text()
-                                    if client_name_elem
-                                    else "N/A"
-                                )
+                                    details_text = await details.inner_text()
+                                    parts = details_text.split(":")
+                                    event_date = (
+                                        parts[0] + ":" + parts[1] + ":" + parts[2]
+                                    )
+                                    workout_type = parts[3].strip()
+                                    flexologist_name = parts[4].strip()
 
-                                booking_number_elem = await table.query_selector(
-                                    "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
-                                )
-                                booking_number = (
-                                    await booking_number_elem.inner_text()
-                                    if booking_number_elem
-                                    else "N/A"
-                                )
-                                booking_id = (
-                                    booking_number.lower().split("#")[1].strip()
-                                    if "#" in booking_number.lower()
-                                    else "N/A"
-                                )
+                                    print(
+                                        event_date,
+                                        workout_type,
+                                        flexologist_name,
+                                        "event date",
+                                    )
 
-                                workout_type_elem = await table.query_selector(
-                                    "table tbody tr td:nth-child(2) div:nth-child(2) strong"
-                                )
-                                workout_type = (
-                                    await workout_type_elem.inner_text()
-                                    if workout_type_elem
-                                    else "N/A"
-                                )
+                                    await details.click()
+                                    await page.wait_for_selector(
+                                        ".fancybox-skin",
+                                        state="visible",
+                                        timeout=10000,
+                                    )
 
-                                flexologist_name_elem = await table.query_selector(
-                                    "table tbody tr td:nth-child(2) div:nth-child(3) strong"
-                                )
-                                flexologist_name = (
-                                    await flexologist_name_elem.inner_text()
-                                    if flexologist_name_elem
-                                    else "N/A"
-                                )
+                                    booking_list_elem = await page.query_selector(
+                                        "#BookingList"
+                                    )
+                                    booking_list_html = (
+                                        await booking_list_elem.inner_html()
+                                        if booking_list_elem
+                                        else ""
+                                    )
+                                    if booking_list_html.strip() == "":
+                                        continue
 
-                                phone_elem = await table.query_selector(
-                                    "table tbody tr td:nth-child(3) .regtxt2"
-                                )
-                                phone_text = (
-                                    await phone_elem.inner_text()
-                                    if phone_elem
-                                    else "N/A"
-                                )
-                                if ":" in phone_text:
-                                    phone = phone_text.split(":")[1].strip()
-                                else:
-                                    phone = phone_text
+                                    iframe = page.frame_locator(
+                                        "iframe[src*='common/scheduling']"
+                                    )
 
-                                event_date_elem = await table.query_selector(
-                                    "table tbody tr td:nth-child(2) .headertxt"
-                                )
-                                event_date = (
-                                    await event_date_elem.inner_text()
-                                    if event_date_elem
-                                    else "N/A"
-                                )
-                                profile_elem = await table.query_selector(
-                                    "table tbody tr td:first-child img"
-                                )
-                                profile_image = await profile_elem.get_attribute("src") if profile_elem else "N/A"
+                                    await iframe.get_by_role("table").first.wait_for(
+                                        state="visible", timeout=20000
+                                    )
+                                    booking_tables = await iframe.locator("table").all()
 
-                                if profile_image != "N/A":
-                                    if "nouser" in profile_image:
+                                    # This line removes the first table from the list of booking_tables as this is the parent table,
+                                    booking_tables = booking_tables[1:]
+
+                                    for booking_table in booking_tables:
+                                        client_name = await booking_table.locator(
+                                            "a[href*='selectcust']"
+                                        ).inner_text()
+                                        booking_id = await booking_table.locator(
+                                            "a[href*='calldetails']"
+                                        ).first.inner_text()
+                                        first_timer = (
+                                            "YES"
+                                            if booking_table.locator(
+                                                "span[title*='first time visitor']"
+                                            )
+                                            else "NO"
+                                        )
+                                        active = "YES"
                                         profile_image = "https://app.clubready.com/images/nouserphoto.png"
-                                    else:
-                                        profile_image = f"https://clubready.blob.core.windows.net/{profile_image}"
+                                        result = {
+                                            "client_name": client_name,
+                                            "booking_id": booking_id,
+                                            "workout_type": workout_type,
+                                            "flexologist_name": flexologist_name.lower(),
+                                            "phone": "",
+                                            "booking_time": (
+                                                event_date.split("-")[0].strip()
+                                            ),
+                                            "event_date": event_date.strip(),
+                                            "past": False,
+                                            "first_timer": first_timer,
+                                            "active": active,
+                                            "location": location,
+                                            "profile_image": profile_image,
+                                            "group_booking": True,
+                                        }
+                                        all_bookings.append(result)
+                                else:
 
-                                result = {
-                                    "client_name": client_name,
-                                    "booking_id": booking_id,
-                                    "workout_type": workout_type,
-                                    "flexologist_name": flexologist_name.split("with")[
-                                        1
-                                    ]
-                                    .strip()
-                                    .lower(),
-                                    "phone": phone,
-                                    "booking_time": (
-                                        event_date.split("-")[0].strip()
-                                        if event_date != "N/A"
+                                    first_timer = (
+                                        "YES"
+                                        if await table.query_selector(
+                                            "table tbody tr td:nth-child(3) span[title='first time visitor']"
+                                        )
+                                        else "NO"
+                                    )
+                                    active = "YES"
+
+                                    client_name_elem = await table.query_selector(
+                                        "table tbody tr td:nth-child(3) a strong"
+                                    )
+                                    client_name = (
+                                        await client_name_elem.inner_text()
+                                        if client_name_elem
                                         else "N/A"
-                                    ),
-                                    "event_date": event_date,
-                                    "past": False,
-                                    "first_timer": first_timer,
-                                    "active": active,
-                                    "location": location,
-                                    "profile_image": profile_image
-                                }
-                                all_bookings.append(result)
+                                    )
+
+                                    booking_number_elem = await table.query_selector(
+                                        "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
+                                    )
+                                    booking_number = (
+                                        await booking_number_elem.inner_text()
+                                        if booking_number_elem
+                                        else "N/A"
+                                    )
+                                    booking_id = (
+                                        booking_number.lower().split("#")[1].strip()
+                                        if "#" in booking_number.lower()
+                                        else "N/A"
+                                    )
+
+                                    workout_type_elem = await table.query_selector(
+                                        "table tbody tr td:nth-child(2) div:nth-child(2) strong"
+                                    )
+                                    workout_type = (
+                                        await workout_type_elem.inner_text()
+                                        if workout_type_elem
+                                        else "N/A"
+                                    )
+
+                                    flexologist_name_elem = await table.query_selector(
+                                        "table tbody tr td:nth-child(2) div:nth-child(3) strong"
+                                    )
+                                    flexologist_name = (
+                                        await flexologist_name_elem.inner_text()
+                                        if flexologist_name_elem
+                                        else "N/A"
+                                    )
+
+                                    phone_elem = await table.query_selector(
+                                        "table tbody tr td:nth-child(3) .regtxt2"
+                                    )
+                                    phone_text = (
+                                        await phone_elem.inner_text()
+                                        if phone_elem
+                                        else "N/A"
+                                    )
+                                    if ":" in phone_text:
+                                        phone = phone_text.split(":")[1].strip()
+                                    else:
+                                        phone = phone_text
+
+                                    event_date_elem = await table.query_selector(
+                                        "table tbody tr td:nth-child(2) .headertxt"
+                                    )
+                                    event_date = (
+                                        await event_date_elem.inner_text()
+                                        if event_date_elem
+                                        else "N/A"
+                                    )
+                                    profile_elem = await table.query_selector(
+                                        "table tbody tr td:first-child img"
+                                    )
+                                    profile_image = (
+                                        await profile_elem.get_attribute("src")
+                                        if profile_elem
+                                        else "N/A"
+                                    )
+
+                                    if profile_image != "N/A":
+                                        if "nouser" in profile_image:
+                                            profile_image = "https://app.clubready.com/images/nouserphoto.png"
+                                        else:
+                                            profile_image = f"https://clubready.blob.core.windows.net/{profile_image}"
+
+                                    # if profile_image != "N/A":
+                                    #     if profile_image.includes("")
+
+                                    result = {
+                                        "client_name": client_name,
+                                        "booking_id": booking_id,
+                                        "workout_type": workout_type,
+                                        "flexologist_name": flexologist_name.split(
+                                            "with"
+                                        )[1]
+                                        .strip()
+                                        .lower(),
+                                        "phone": phone,
+                                        "booking_time": (
+                                            event_date.split("-")[0].strip()
+                                            if event_date != "N/A"
+                                            else "N/A"
+                                        ),
+                                        "event_date": event_date,
+                                        "past": False,
+                                        "first_timer": first_timer,
+                                        "active": active,
+                                        "location": location,
+                                        "profile_image": profile_image,
+                                        "group_booking": False,
+                                    }
+                                    all_bookings.append(result)
 
                         else:
                             await page.wait_for_selector("select[name='stores']")
@@ -2104,779 +2299,20 @@ async def get_user_bookings_from_clubready(user_details, max_concurrency=3):
                 raise e
 
 
-def submit_notes(username, password, period, notes, location=None, client_name=None):
-    password = reverse_hash_credentials(username, password)
-    playwright = None
-    browser = None
-    context = None
-    page = None
-    modal_details = None
-    same_client_booking = None
-    same_client_period = None
-
-    def capture_and_upload_screenshot(local_page, label):
-        try:
-            png_bytes = local_page.screenshot(full_page=True)
-            image_name = f"errors/{int(time.time())}_{uuid.uuid4().hex}_{label}.png"
-
-            result = save_error_image_to_s3(
-                BytesIO(png_bytes), image_name, content_type="image/png"
-            )
-            if isinstance(result, dict) and result.get("status") == "success":
-                return result.get("url")
-            else:
-                logging.error(
-                    f"S3 upload failed: {result.get('message', 'Unknown error')}"
-                )
-                return None
-        except Exception as _s3e:
-            logging.error(f"Failed to capture/upload screenshot: {_s3e}")
-            return None
-
-    try:
-        playwright = sync_playwright().start()
-        browser = playwright.chromium.launch(headless=True)
-        context = browser.new_context()
-        page = context.new_page()
-
-        page.goto(INITIAL_URL)
-        page.fill("input[name='uid']", username)
-        page.fill("input[name='pw']", password)
-        page.click("input[type='submit']")
-        page.wait_for_load_state("networkidle", timeout=0)
-        base_url = page.url
-        if "Dashboard" in base_url:
-            page.goto("https://app.clubready.com/admin/schedulingdayview.asp")
-            page.wait_for_load_state("networkidle", timeout=0)
-
-            my_booking_tab = page.wait_for_selector(
-                "#dvtab1", state="visible", timeout=40000
-            )
-            my_booking_tab.click()
-            all_bookings_cards = []
-
-            all_bookings_cards = (
-                page.query_selector_all("table[class*='bookby']")
-                if page.query_selector_all("table[class*='bookby']")
-                else []
-            )
-
-            unpaid_modal = False
-            if len(all_bookings_cards) > 0:
-                print(
-                    f"Bookings found for location: {location} {len(all_bookings_cards)}"
-                )
-
-                matching_booking = None
-                matching_index = -1
-
-                for i, div in enumerate(all_bookings_cards):
-                    event_date = div.query_selector(
-                        "table tbody tr td:nth-child(2) .headertxt"
-                    ).inner_text()
-
-                    if event_date == period:
-                        matching_booking = div
-                        matching_index = i
-                        break
-
-                if (
-                    matching_booking
-                    and matching_index >= 0
-                    and matching_index + 1 < len(all_bookings_cards)
-                ):
-                    check_client = (
-                        all_bookings_cards[matching_index + 1]
-                        .query_selector("table tbody tr td:nth-child(3) a strong")
-                        .inner_text()
-                        .lower()
-                    )
-                    if check_client == client_name:
-                        same_client_booking = all_bookings_cards[matching_index + 1]
-                        same_client_period = same_client_booking.query_selector(
-                            "table tbody tr td:nth-child(2) .headertxt"
-                        ).inner_text()
-                        print(
-                            f"Found next booking for same client at index {matching_index + 1}"
-                        )
-                    else:
-                        print(
-                            f"Found next booking for different client at index {matching_index + 1}"
-                        )
-
-                if matching_booking:
-                    booking_number_elem = matching_booking.query_selector(
-                        "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
-                    )
-                    booking_number_elem.wait_for_element_state("visible", timeout=10000)
-                    booking_number_elem.wait_for_element_state("stable", timeout=10000)
-                    booking_number_elem.click()
-
-                    more_modal = page.wait_for_selector(
-                        ".fancybox-skin",
-                        state="visible",
-                        timeout=10000,
-                    )
-                    log_off_tab = more_modal.query_selector("#subnav2 li:last-child")
-                    log_off_tab.wait_for_element_state("visible", timeout=10000)
-                    log_off_tab.wait_for_element_state("stable", timeout=10000)
-                    log_off_tab.click()
-                    page.wait_for_function(
-                        "element => !element.isConnected", arg=log_off_tab
-                    )
-                    page.wait_for_selector("#subnav2 li.activesublink2", timeout=10000)
-                    form_details = page.wait_for_selector(
-                        "#bkdetailform", state="visible", timeout=40000
-                    )
-                    page.wait_for_function(
-                        "element => element.isConnected && element.offsetParent !== null",
-                        arg=form_details,
-                    )
-
-                    booking_successful = page.query_selector(".baseline #lg_stat5")
-                    if booking_successful:
-                        booking_successful.wait_for_element_state(
-                            "visible", timeout=10000
-                        )
-                        booking_successful.wait_for_element_state(
-                            "stable", timeout=10000
-                        )
-                        booking_successful.click()
-                        page.wait_for_function(
-                            "element => element.getAttribute('src') === '/images/bookingstatus5.png'",
-                            arg=booking_successful,
-                            timeout=10000,
-                        )
-
-                        text_area = page.query_selector("#bkdetailform textarea#note")
-                        if text_area:
-                            text_area.fill(notes)
-                        else:
-                            screenshot_url = capture_and_upload_screenshot(
-                                page, "no_text_area"
-                            )
-                            raise Exception(
-                                f"No text area found in the booking{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                            )
-
-                        log_off_btn = page.query_selector(
-                            "#logbutton input:first-child"
-                        )
-                        log_off_btn.wait_for_element_state("visible", timeout=10000)
-                        log_off_btn.wait_for_element_state("stable", timeout=10000)
-                        log_off_btn.click()
-                        page.wait_for_timeout(1000)
-
-                        unpaid_modal = (
-                            True
-                            if matching_booking.query_selector(
-                                "table tbody tr td:nth-child(2) div:nth-child(5)"
-                            )
-                            else False
-                        )
-                    else:
-                        mid_div = page.query_selector("#bkdetailform .infobox")
-                        if mid_div:
-                            if (
-                                "session logged as completed"
-                                in mid_div.inner_text().lower()
-                            ):
-                                notes_tab = page.query_selector(
-                                    ".fancybox-skin #subnav2 li:nth-child(2)"
-                                )
-                                notes_tab.wait_for_element_state(
-                                    "visible", timeout=10000
-                                )
-                                notes_tab.wait_for_element_state(
-                                    "stable", timeout=10000
-                                )
-                                notes_tab.click()
-                                page.wait_for_function(
-                                    "element => !element.isConnected", arg=notes_tab
-                                )
-                                page.wait_for_selector(
-                                    "#subnav2 li.activesublink2", timeout=10000
-                                )
-                                form_details = page.wait_for_selector(
-                                    "#bkdetailform", state="visible", timeout=40000
-                                )
-                                page.wait_for_function(
-                                    "element => element.isConnected && element.offsetParent !== null",
-                                    arg=form_details,
-                                )
-                                page.select_option(
-                                    "select[id='bookingnoteclassifyID']",
-                                    label="Fitness Related",
-                                )
-                                textarea = page.query_selector("#bookingnotetext")
-                                if textarea:
-                                    textarea.fill(notes)
-                                else:
-                                    # come here and ad dthe screen capture to follow it bro
-                                    screenshot_url = capture_and_upload_screenshot(
-                                        page, "no_text_area"
-                                    )
-                                    raise Exception(
-                                        f"No text area found in the booking{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                                    )
-
-                                submit_btn = page.query_selector(
-                                    "input[onclick*='addnote']"
-                                )
-                                submit_btn.click()
-                                same_client_booking = None
-                                page.wait_for_timeout(1000)
-                            else:
-                                list_items = page.query_selector_all("#subnav2 li")
-                                if len(list_items) < 3:
-                                    notes_tab = page.query_selector(
-                                        ".fancybox-skin #subnav2 li:nth-child(2)"
-                                    )
-                                    notes_tab.wait_for_element_state(
-                                        "visible", timeout=10000
-                                    )
-                                    notes_tab.wait_for_element_state(
-                                        "stable", timeout=10000
-                                    )
-                                    notes_tab.click()
-                                    page.wait_for_function(
-                                        "element => !element.isConnected", arg=notes_tab
-                                    )
-                                    page.wait_for_selector(
-                                        "#subnav2 li.activesublink2", timeout=10000
-                                    )
-                                    form_details = page.wait_for_selector(
-                                        "#bkdetailform", state="visible", timeout=40000
-                                    )
-                                    page.wait_for_function(
-                                        "element => element.isConnected && element.offsetParent !== null",
-                                        arg=form_details,
-                                    )
-                                    page.select_option(
-                                        "select[id='bookingnoteclassifyID']",
-                                        label="Fitness Related",
-                                    )
-                                    textarea = page.query_selector("#bookingnotetext")
-                                    if textarea:
-                                        textarea.fill(notes)
-                                    else:
-                                        # come here and ad dthe screen capture to follow it bro
-                                        screenshot_url = capture_and_upload_screenshot(
-                                            page, "no_text_area"
-                                        )
-                                        raise Exception(
-                                            f"No text area found in the booking{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                                        )
-
-                                    submit_btn = page.query_selector(
-                                        "input[onclick*='addnote']"
-                                    )
-                                    submit_btn.click()
-                                    same_client_booking = None
-                                    page.wait_for_timeout(1000)
-                                else:
-                                    screenshot_url = capture_and_upload_screenshot(
-                                        page, "no_session_logged"
-                                    )
-                                    raise Exception(
-                                        f"No session logged{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                                    )
-                        else:
-                            screenshot_url = capture_and_upload_screenshot(
-                                page, "no_mid_div"
-                            )
-                            raise Exception(
-                                f"No mid div found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                            )
-                else:
-                    screenshot_url = capture_and_upload_screenshot(
-                        page, "no_matching_booking"
-                    )
-                    raise Exception(
-                        f"No matching booking found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                    )
-
-                if same_client_booking:
-                    all_bookings = page.query_selector_all("table[class*='bookby']")
-                    same_client_booking = all_bookings[matching_index + 1]
-                    booking_number_elem = same_client_booking.query_selector(
-                        "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
-                    )
-                    booking_number_elem.wait_for_element_state("visible", timeout=10000)
-                    booking_number_elem.wait_for_element_state("stable", timeout=10000)
-                    booking_number_elem.click()
-
-                    more_modal = page.wait_for_selector(
-                        ".fancybox-skin",
-                        state="visible",
-                        timeout=10000,
-                    )
-                    log_off_tab = more_modal.query_selector("#subnav2 li:last-child")
-                    log_off_tab.wait_for_element_state("visible", timeout=10000)
-                    log_off_tab.wait_for_element_state("stable", timeout=10000)
-                    log_off_tab.click()
-                    page.wait_for_function(
-                        "element => !element.isConnected", arg=log_off_tab
-                    )
-                    page.wait_for_selector("#subnav2 li.activesublink2", timeout=10000)
-                    form_details = page.wait_for_selector(
-                        "#bkdetailform", state="visible", timeout=40000
-                    )
-                    page.wait_for_function(
-                        "element => element.isConnected && element.offsetParent !== null",
-                        arg=form_details,
-                    )
-
-                    booking_successful = page.query_selector(".baseline #lg_stat5")
-                    if booking_successful:
-                        booking_successful.wait_for_element_state(
-                            "visible", timeout=10000
-                        )
-                        booking_successful.wait_for_element_state(
-                            "stable", timeout=10000
-                        )
-                        booking_successful.click()
-                        page.wait_for_function(
-                            "element => element.getAttribute('src') === '/images/bookingstatus5.png'",
-                            arg=booking_successful,
-                            timeout=10000,
-                        )
-                    text_area = page.query_selector("#bkdetailform textarea#note")
-                    if text_area:
-                        text_area.fill(notes)
-                    else:
-                        screenshot_url = capture_and_upload_screenshot(
-                            page, "no_text_area"
-                        )
-                        raise Exception(
-                            f"No text area found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                        )
-
-                    log_off_btn = page.query_selector("#logbutton input:first-child")
-                    log_off_btn.wait_for_element_state("visible", timeout=10000)
-                    log_off_btn.wait_for_element_state("stable", timeout=10000)
-
-                    log_off_btn.click()
-                    page.wait_for_timeout(600)
-                    unpaid_modal = (
-                        True
-                        if matching_booking.query_selector(
-                            "table tbody tr td:nth-child(2) div:nth-child(5)"
-                        )
-                        else False
-                    )
-            else:
-                screenshot_url = capture_and_upload_screenshot(page, "no_container")
-                raise Exception(
-                    f"No container found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                )
-            # remove_notes(user_id, all_bookings)
-            return {
-                "status": True,
-                "same_client_period": same_client_period,
-                "message": (
-                    "Heads Up - Session was logged off, but unpaid.  Ask front desk team to process payment"
-                    if unpaid_modal
-                    else "Notes submitted successfully"
-                ),
-            }
-        else:
-            page.wait_for_selector("select[name='stores']")
-            select_element = page.query_selector("select[name='stores']")
-            options = select_element.query_selector_all("option")
-            option = None
-            for opt in options:
-                if opt.inner_text().lower() == location.lower():
-                    option = opt
-                    break
-            if option:
-                option.click()
-                page.click("input[name='Submit2']")
-                page.wait_for_load_state("networkidle", timeout=0)
-                page.goto("https://app.clubready.com/admin/schedulingdayview.asp")
-                page.wait_for_load_state("networkidle", timeout=0)
-                my_booking_tab = page.wait_for_selector(
-                    "#dvtab1", state="visible", timeout=40000
-                )
-                my_booking_tab.click()
-                all_bookings_cards = []
-
-                all_bookings_cards = (
-                    page.query_selector_all("table[class*='bookby']")
-                    if page.query_selector_all("table[class*='bookby']")
-                    else []
-                )
-
-                unpaid_modal = False
-                if len(all_bookings_cards) > 0:
-                    print(
-                        f"Bookings found for location: {location} {len(all_bookings_cards)}"
-                    )
-
-                    matching_booking = None
-                    matching_index = -1
-
-                    for i, div in enumerate(all_bookings_cards):
-                        event_date = div.query_selector(
-                            "table tbody tr td:nth-child(2) .headertxt"
-                        ).inner_text()
-                        
-                        if event_date == period:
-                            matching_booking = div
-                            matching_index = i
-                            break
-
-                    if (
-                        matching_booking
-                        and matching_index >= 0
-                        and matching_index + 1 < len(all_bookings_cards)
-                    ):
-                        check_client = (
-                            all_bookings_cards[matching_index + 1]
-                            .query_selector("table tbody tr td:nth-child(3) a strong")
-                            .inner_text()
-                            .lower()
-                        )
-                        if check_client == client_name:
-                            same_client_booking = all_bookings_cards[matching_index + 1]
-                            same_client_period = same_client_booking.query_selector(
-                                "table tbody tr td:nth-child(2) .headertxt"
-                            ).inner_text()
-                            print(
-                                f"Found next booking for same client at index {matching_index + 1}"
-                            )
-                        else:
-                            print(
-                                f"Found next booking for different client at index {matching_index + 1}"
-                            )
-
-                    if matching_booking:
-                        booking_number_elem = matching_booking.query_selector(
-                            "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
-                        )
-                        booking_number_elem.wait_for_element_state(
-                            "visible", timeout=10000
-                        )
-                        booking_number_elem.wait_for_element_state(
-                            "stable", timeout=10000
-                        )
-                        booking_number_elem.click()
-
-                        more_modal = page.wait_for_selector(
-                            ".fancybox-skin",
-                            state="visible",
-                            timeout=10000,
-                        )
-                        log_off_tab = more_modal.query_selector(
-                            "#subnav2 li:last-child"
-                        )
-                        log_off_tab.wait_for_element_state("visible", timeout=10000)
-                        log_off_tab.wait_for_element_state("stable", timeout=10000)
-                        log_off_tab.click()
-                        page.wait_for_function(
-                            "element => !element.isConnected", arg=log_off_tab
-                        )
-                        page.wait_for_selector(
-                            "#subnav2 li.activesublink2", timeout=10000
-                        )
-                        form_details = page.wait_for_selector(
-                            "#bkdetailform", state="visible", timeout=40000
-                        )
-                        page.wait_for_function(
-                            "element => element.isConnected && element.offsetParent !== null",
-                            arg=form_details,
-                        )
-
-                        booking_successful = page.query_selector(".baseline #lg_stat5")
-                        if booking_successful:
-                            booking_successful.wait_for_element_state(
-                                "visible", timeout=10000
-                            )
-                            booking_successful.wait_for_element_state(
-                                "stable", timeout=10000
-                            )
-                            booking_successful.click()
-                            page.wait_for_function(
-                                "element => element.getAttribute('src') === '/images/bookingstatus5.png'",
-                                arg=booking_successful,
-                                timeout=10000,
-                            )
-
-                            text_area = page.query_selector(
-                                "#bkdetailform textarea#note"
-                            )
-                            if text_area:
-                                text_area.fill(notes)
-                            else:
-                                screenshot_url = capture_and_upload_screenshot(
-                                    page, "no_text_area"
-                                )
-                                raise Exception(
-                                    f"No text area found in the booking{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                                )
-
-                            log_off_btn = page.query_selector(
-                                "#logbutton input:first-child"
-                            )
-                            log_off_btn.wait_for_element_state("visible", timeout=10000)
-                            log_off_btn.wait_for_element_state("stable", timeout=10000)
-
-                            log_off_btn.click()
-                            page.wait_for_timeout(1000)
-                            unpaid_modal = (
-                                True
-                                if matching_booking.query_selector(
-                                    "table tbody tr td:nth-child(2) div:nth-child(5)"
-                                )
-                                else False
-                            )
-                        else:
-                            mid_div = page.query_selector("#bkdetailform .infobox")
-                            if mid_div:
-                                if (
-                                    "session logged as completed"
-                                    in mid_div.inner_text().lower()
-                                ):
-                                    notes_tab = page.query_selector(
-                                        ".fancybox-skin #subnav2 li:nth-child(2)"
-                                    )
-                                    notes_tab.wait_for_element_state(
-                                        "visible", timeout=10000
-                                    )
-                                    notes_tab.wait_for_element_state(
-                                        "stable", timeout=10000
-                                    )
-                                    notes_tab.click()
-                                    page.wait_for_function(
-                                        "element => !element.isConnected", arg=notes_tab
-                                    )
-                                    page.wait_for_selector(
-                                        "#subnav2 li.activesublink2", timeout=10000
-                                    )
-                                    form_details = page.wait_for_selector(
-                                        "#bkdetailform", state="visible", timeout=40000
-                                    )
-                                    page.wait_for_function(
-                                        "element => element.isConnected && element.offsetParent !== null",
-                                        arg=form_details,
-                                    )
-                                    page.select_option(
-                                        "select[id='bookingnoteclassifyID']",
-                                        label="Fitness Related",
-                                    )
-                                    textarea = page.query_selector("#bookingnotetext")
-                                    if textarea:
-                                        textarea.fill(notes)
-                                    else:
-                                        # come here and ad dthe screen capture to follow it bro
-                                        screenshot_url = capture_and_upload_screenshot(
-                                            page, "no_text_area"
-                                        )
-                                        raise Exception(
-                                            f"No text area found in the booking{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                                        )
-
-                                    submit_btn = page.query_selector(
-                                        "input[onclick*='addnote']"
-                                    )
-                                    submit_btn.click()
-                                    same_client_booking = None
-                                    page.wait_for_timeout(1000)
-                                else:
-                                    list_items = page.query_selector_all("#subnav2 li")
-                                    if len(list_items) < 3:
-                                        notes_tab = page.query_selector(
-                                            ".fancybox-skin #subnav2 li:nth-child(2)"
-                                        )
-                                        notes_tab.wait_for_element_state(
-                                            "visible", timeout=10000
-                                        )
-                                        notes_tab.wait_for_element_state(
-                                            "stable", timeout=10000
-                                        )
-                                        notes_tab.click()
-                                        page.wait_for_function(
-                                            "element => !element.isConnected", arg=notes_tab
-                                        )
-                                        page.wait_for_selector(
-                                            "#subnav2 li.activesublink2", timeout=10000
-                                        )
-                                        form_details = page.wait_for_selector(
-                                            "#bkdetailform", state="visible", timeout=40000
-                                        )
-                                        page.wait_for_function(
-                                            "element => element.isConnected && element.offsetParent !== null",
-                                            arg=form_details,
-                                        )
-                                        page.select_option(
-                                            "select[id='bookingnoteclassifyID']",
-                                            label="Fitness Related",
-                                        )
-                                        textarea = page.query_selector("#bookingnotetext")
-                                        if textarea:
-                                            textarea.fill(notes)
-                                        else:
-                                            # come here and ad dthe screen capture to follow it bro
-                                            screenshot_url = capture_and_upload_screenshot(
-                                                page, "no_text_area"
-                                            )
-                                            raise Exception(
-                                                f"No text area found in the booking{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                                            )
-
-                                        submit_btn = page.query_selector(
-                                            "input[onclick*='addnote']"
-                                        )
-                                        submit_btn.click()
-                                        same_client_booking = None
-                                        page.wait_for_timeout(1000)
-                                    else:
-                                        screenshot_url = capture_and_upload_screenshot(
-                                            page, "no_session_logged"
-                                        )
-                                        raise Exception(
-                                            f"No session logged{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                                        )
-                            else:
-                                screenshot_url = capture_and_upload_screenshot(
-                                    page, "no_mid_div"
-                                )
-                                raise Exception(
-                                    f"No mid div found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                                )
-
-                    else:
-                        screenshot_url = capture_and_upload_screenshot(
-                            page, "no_matching_booking"
-                        )
-                        raise Exception(
-                            f"No matching booking found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                        )
-
-                    if same_client_booking:
-                        all_bookings = page.query_selector_all("table[class*='bookby']")
-                        same_client_booking = all_bookings[matching_index + 1]
-                        booking_number_elem = same_client_booking.query_selector(
-                            "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
-                        )
-                        booking_number_elem.wait_for_element_state(
-                            "visible", timeout=10000
-                        )
-                        booking_number_elem.wait_for_element_state(
-                            "stable", timeout=10000
-                        )
-                        booking_number_elem.click()
-
-                        more_modal = page.wait_for_selector(
-                            ".fancybox-skin",
-                            state="visible",
-                            timeout=10000,
-                        )
-                        log_off_tab = more_modal.query_selector(
-                            "#subnav2 li:last-child"
-                        )
-                        log_off_tab.wait_for_element_state("visible", timeout=10000)
-                        log_off_tab.wait_for_element_state("stable", timeout=10000)
-                        log_off_tab.click()
-                        page.wait_for_function(
-                            "element => !element.isConnected", arg=log_off_tab
-                        )
-                        page.wait_for_selector(
-                            "#subnav2 li.activesublink2", timeout=10000
-                        )
-                        form_details = page.wait_for_selector(
-                            "#bkdetailform", state="visible", timeout=40000
-                        )
-                        page.wait_for_function(
-                            "element => element.isConnected && element.offsetParent !== null",
-                            arg=form_details,
-                        )
-
-                        booking_successful = page.query_selector(".baseline #lg_stat5")
-                        if booking_successful:
-                            booking_successful.wait_for_element_state(
-                                "visible", timeout=10000
-                            )
-                            booking_successful.wait_for_element_state(
-                                "stable", timeout=10000
-                            )
-                            booking_successful.click()
-                            page.wait_for_function(
-                                "element => element.getAttribute('src') === '/images/bookingstatus5.png'",
-                                arg=booking_successful,
-                                timeout=10000,
-                            )
-                        text_area = page.query_selector("#bkdetailform textarea#note")
-                        if text_area:
-                            text_area.fill(notes)
-                        else:
-                            screenshot_url = capture_and_upload_screenshot(
-                                page, "no_text_area"
-                            )
-                            raise Exception(
-                                f"No text area found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                            )
-
-                        log_off_btn = page.query_selector(
-                            "#logbutton input:first-child"
-                        )
-                        log_off_btn.wait_for_element_state("visible", timeout=10000)
-                        log_off_btn.wait_for_element_state("stable", timeout=10000)
-
-                        log_off_btn.click()
-                        page.wait_for_timeout(600)
-                        unpaid_modal = (
-                            True
-                            if matching_booking.query_selector(
-                                "table tbody tr td:nth-child(2) div:nth-child(5)"
-                            )
-                            else False
-                        )
-                else:
-                    screenshot_url = capture_and_upload_screenshot(page, "no_container")
-                    raise Exception(
-                        f"No container found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                    )
-                # remove_notes(user_id, all_bookings)
-                return {
-                    "status": True,
-                    "same_client_period": same_client_period,
-                    "message": (
-                        "Heads Up - Session was logged off, but unpaid.  Ask front desk team to process payment"
-                        if unpaid_modal
-                        else "Notes submitted successfully"
-                    ),
-                }
-
-    except Exception as e:
-        print(f"An error occurred during submitting notes: {str(e)}")
-        screenshot_url = capture_and_upload_screenshot(page, "no_container")
-        raise Exception(
-            f"{str(e)}{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-        )
-    finally:
-        if page:
-            page.close()
-        if context:
-            context.close()
-        if browser:
-            browser.close()
-        if playwright:
-            playwright.stop()
-
-
-
-def submit_after_log_off(
-    username, password, period, notes, location=None, client_name=None
+def submit_notes(
+    username,
+    password,
+    period,
+    notes,
+    location=None,
+    client_name=None,
+    group_booking=False,
 ):
     password = reverse_hash_credentials(username, password)
     playwright = None
     browser = None
     context = None
     page = None
-    modal_details = None
-    same_client_booking = None
-    same_client_period = None
 
     def capture_and_upload_screenshot(local_page, label):
         try:
@@ -2897,230 +2333,171 @@ def submit_after_log_off(
             logging.error(f"Failed to capture/upload screenshot: {_s3e}")
             return None
 
-    try:
-        playwright = sync_playwright().start()
-        browser = playwright.chromium.launch(headless=True)
-        context = browser.new_context()
-        page = context.new_page()
+    def get_bookings(page):
+        my_booking_tab = page.wait_for_selector(
+            "#dvtab1", state="visible", timeout=40000
+        )
+        my_booking_tab.click()
+        all_bookings_cards = []
 
-        page.goto(INITIAL_URL)
-        page.fill("input[name='uid']", username)
-        page.fill("input[name='pw']", password)
-        page.click("input[type='submit']")
-        page.wait_for_load_state("networkidle", timeout=0)
-        base_url = page.url
-        if "Dashboard" in base_url:
-            page.goto("https://app.clubready.com/admin/schedulingdayview.asp")
-            page.wait_for_load_state("networkidle", timeout=0)
+        all_bookings_cards = (
+            page.query_selector_all("table[class*='bookby']")
+            if page.query_selector_all("table[class*='bookby']")
+            else []
+        )
+        return all_bookings_cards
 
-            my_booking_tab = page.wait_for_selector(
-                "#dvtab1", state="visible", timeout=40000
+    def handle_submission(page, all_bookings_cards):
+        unpaid_modal = False
+        modal_details = None
+        same_client_booking = None
+        same_client_period = None
+        matching_booking = None
+        matching_index = -1
+        event_date = None
+
+        for i, div in enumerate(all_bookings_cards):
+            if group_booking:
+                details = div.query_selector("table tbody tr td")
+                details_text = details.inner_text()
+                parts = details_text.split(":")
+                event_date = parts[0] + ":" + parts[1] + ":" + parts[2]
+                event_date = event_date.strip()
+            else:
+                header_element = div.query_selector(
+                    "table tbody tr td:nth-child(2) .headertxt"
+                )
+                if header_element:
+                    event_date = header_element.inner_text()
+                else:
+                    continue
+            print(event_date, period)
+            print(event_date == period)
+            if event_date == period:
+                matching_booking = div
+                matching_index = i
+                break
+
+        if (
+            matching_booking
+            and matching_index >= 0
+            and matching_index + 1 < len(all_bookings_cards)
+            and not group_booking
+        ):
+            check_client = (
+                all_bookings_cards[matching_index + 1]
+                .query_selector("table tbody tr td:nth-child(3) a strong")
+                .inner_text()
+                .lower()
             )
-            my_booking_tab.click()
-            all_bookings_cards = []
-
-            all_bookings_cards = (
-                page.query_selector_all("table[class*='bookby']")
-                if page.query_selector_all("table[class*='bookby']")
-                else []
-            )
-
-            unpaid_modal = False
-            if len(all_bookings_cards) > 0:
+            if check_client == client_name:
+                same_client_booking = all_bookings_cards[matching_index + 1]
+                same_client_period = same_client_booking.query_selector(
+                    "table tbody tr td:nth-child(2) .headertxt"
+                ).inner_text()
                 print(
-                    f"Bookings found for location: {location} {len(all_bookings_cards)}"
+                    f"Found next booking for same client at index {matching_index + 1}"
+                )
+            else:
+                print(
+                    f"Found next booking for different client at index {matching_index + 1}"
                 )
 
-                matching_booking = None
-                matching_index = -1
+        if matching_booking:
+            if group_booking:
+                details = matching_booking.query_selector("table tbody tr td")
+                details.click()
+                page.wait_for_selector(
+                    ".fancybox-skin",
+                    state="visible",
+                    timeout=10000,
+                )
 
-                for i, div in enumerate(all_bookings_cards):
-                    event_date = div.query_selector(
-                        "table tbody tr td:nth-child(2) .headertxt"
+                iframe = page.frame_locator("iframe[src*='common/scheduling']")
+
+                iframe.get_by_role("table").first.wait_for(
+                    state="visible", timeout=20000
+                )
+                booking_tables = iframe.locator("table").all()
+
+                # This line removes the first table from the list of booking_tables as this is the parent table,
+                booking_tables = booking_tables[1:]
+
+                for booking_table in booking_tables:
+                    check_name = booking_table.locator(
+                        "a[href*='selectcust']"
                     ).inner_text()
-
-                    if event_date == period:
-                        matching_booking = div
-                        matching_index = i
+                    if check_name.lower().strip() == client_name:
+                        booking_table.locator("a[href*='calldetails']").first.click()
                         break
 
-                if (
-                    matching_booking
-                    and matching_index >= 0
-                    and matching_index + 1 < len(all_bookings_cards)
-                ):
-                    check_client = (
-                        all_bookings_cards[matching_index + 1]
-                        .query_selector("table tbody tr td:nth-child(3) a strong")
-                        .inner_text()
-                        .lower()
-                    )
-                    if check_client == client_name:
-                        same_client_booking = all_bookings_cards[matching_index + 1]
-                        same_client_period = same_client_booking.query_selector(
-                            "table tbody tr td:nth-child(2) .headertxt"
-                        ).inner_text()
-                        print(
-                            f"Found next booking for same client at index {matching_index + 1}"
-                        )
-                    else:
-                        print(
-                            f"Found next booking for different client at index {matching_index + 1}"
-                        )
-
-                if matching_booking:
-                    booking_number_elem = matching_booking.query_selector(
-                        "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
-                    )
-                    booking_number_elem.wait_for_element_state("visible", timeout=10000)
-                    booking_number_elem.wait_for_element_state("stable", timeout=10000)
-                    booking_number_elem.click()
-
-                    more_modal = page.wait_for_selector(
-                        ".fancybox-skin",
-                        state="visible",
-                        timeout=10000,
-                    )
-                    notes_tab = more_modal.query_selector("#subnav2 li:nth-child(2)")
-                    notes_tab.wait_for_element_state("visible", timeout=10000)
-                    notes_tab.wait_for_element_state("stable", timeout=10000)
-                    notes_tab.click()
-                    page.wait_for_function(
-                        "element => !element.isConnected", arg=notes_tab
-                    )
-                    page.wait_for_selector("#subnav2 li.activesublink2", timeout=10000)
-                    form_details = page.wait_for_selector(
-                        "#bkdetailform", state="visible", timeout=40000
-                    )
-                    page.wait_for_function(
-                        "element => element.isConnected && element.offsetParent !== null",
-                        arg=form_details,
-                    )
-                    page.select_option(
-                        "select[id='bookingnoteclassifyID']", label="Fitness Related"
-                    )
-                    textarea = page.query_selector("#bookingnotetext")
-                    if textarea:
-                        textarea.fill(notes)
-                    else:
-                        # come here and ad dthe screen capture to follow it bro
-                        screenshot_url = capture_and_upload_screenshot(
-                            page, "no_text_area"
-                        )
-                        raise Exception(
-                            f"No text area found in the booking{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                        )
-
-                    submit_btn = page.query_selector("input[onclick*='addnote']")
-                    submit_btn.click()
-                    page.wait_for_timeout(1000)
-
-                else:
-                    screenshot_url = capture_and_upload_screenshot(
-                        page, "no_matching_booking"
-                    )
-                    raise Exception(
-                        f"No matching booking found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                    )
             else:
-                screenshot_url = capture_and_upload_screenshot(page, "no_container")
-                raise Exception(
-                    f"No container found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                booking_number_elem = matching_booking.query_selector(
+                    "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
                 )
-            return {
-                "status": True,
-                "same_client_period": same_client_period,
-                "message": "Notes submitted successfully",
-            }
-        else:
-            page.wait_for_selector("select[name='stores']")
-            select_element = page.query_selector("select[name='stores']")
-            options = select_element.query_selector_all("option")
-            option = None
-            for opt in options:
-                if opt.inner_text().lower() == location.lower():
-                    option = opt
-                    break
-            if option:
-                option.click()
-                page.click("input[name='Submit2']")
-                page.wait_for_load_state("networkidle", timeout=0)
-                page.goto("https://app.clubready.com/admin/schedulingdayview.asp")
-                page.wait_for_load_state("networkidle", timeout=0)
-                my_booking_tab = page.wait_for_selector(
-                    "#dvtab1", state="visible", timeout=40000
-                )
-                my_booking_tab.click()
-                all_bookings_cards = []
+                booking_number_elem.wait_for_element_state("visible", timeout=10000)
+                booking_number_elem.wait_for_element_state("stable", timeout=10000)
+                booking_number_elem.click()
 
-                all_bookings_cards = (
-                    page.query_selector_all("table[class*='bookby']")
-                    if page.query_selector_all("table[class*='bookby']")
-                    else []
+            more_modal = page.wait_for_selector(
+                ".fancybox-skin",
+                state="visible",
+                timeout=10000,
+            )
+            log_off_tab = more_modal.query_selector("#subnav2 li:last-child")
+            log_off_tab.wait_for_element_state("visible", timeout=10000)
+            log_off_tab.wait_for_element_state("stable", timeout=10000)
+            log_off_tab.click()
+            page.wait_for_function("element => !element.isConnected", arg=log_off_tab)
+            page.wait_for_selector("#subnav2 li.activesublink2", timeout=10000)
+            form_details = page.wait_for_selector(
+                "#bkdetailform", state="visible", timeout=40000
+            )
+            page.wait_for_function(
+                "element => element.isConnected && element.offsetParent !== null",
+                arg=form_details,
+            )
+
+            booking_successful = page.query_selector(".baseline #lg_stat5")
+            if booking_successful:
+                booking_successful.wait_for_element_state("visible", timeout=10000)
+                booking_successful.wait_for_element_state("stable", timeout=10000)
+                booking_successful.click()
+                page.wait_for_function(
+                    "element => element.getAttribute('src') === '/images/bookingstatus5.png'",
+                    arg=booking_successful,
+                    timeout=10000,
                 )
 
-                unpaid_modal = False
-                if len(all_bookings_cards) > 0:
-                    print(
-                        f"Bookings found for location: {location} {len(all_bookings_cards)}"
+                text_area = page.query_selector("#bkdetailform textarea#note")
+                if text_area:
+                    text_area.fill(notes)
+                else:
+                    screenshot_url = capture_and_upload_screenshot(page, "no_text_area")
+                    raise Exception(
+                        f"No text area found in the booking{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
                     )
 
-                    matching_booking = None
-                    matching_index = -1
+                log_off_btn = page.query_selector("#logbutton input:first-child")
+                log_off_btn.wait_for_element_state("visible", timeout=10000)
+                log_off_btn.wait_for_element_state("stable", timeout=10000)
 
-                    for i, div in enumerate(all_bookings_cards):
-                        event_date = div.query_selector(
-                            "table tbody tr td:nth-child(2) .headertxt"
-                        ).inner_text()
-
-                        if event_date == period:
-                            matching_booking = div
-                            matching_index = i
-                            break
-
-                    if (
-                        matching_booking
-                        and matching_index >= 0
-                        and matching_index + 1 < len(all_bookings_cards)
-                    ):
-                        check_client = (
-                            all_bookings_cards[matching_index + 1]
-                            .query_selector("table tbody tr td:nth-child(3) a strong")
-                            .inner_text()
-                            .lower()
-                        )
-                        if check_client == client_name:
-                            same_client_booking = all_bookings_cards[matching_index + 1]
-                            same_client_period = same_client_booking.query_selector(
-                                "table tbody tr td:nth-child(2) .headertxt"
-                            ).inner_text()
-                            print(
-                                f"Found next booking for same client at index {matching_index + 1}"
-                            )
-                        else:
-                            print(
-                                f"Found next booking for different client at index {matching_index + 1}"
-                            )
-
-                    if matching_booking:
-                        booking_number_elem = matching_booking.query_selector(
-                            "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
-                        )
-                        booking_number_elem.wait_for_element_state(
-                            "visible", timeout=10000
-                        )
-                        booking_number_elem.wait_for_element_state(
-                            "stable", timeout=10000
-                        )
-                        booking_number_elem.click()
-
-                        more_modal = page.wait_for_selector(
-                            ".fancybox-skin",
-                            state="visible",
-                            timeout=10000,
-                        )
-                        notes_tab = more_modal.query_selector(
-                            "#subnav2 li:nth-child(2)"
+                log_off_btn.click()
+                page.wait_for_timeout(1000)
+                unpaid_modal = (
+                    True
+                    if matching_booking.query_selector(
+                        "table tbody tr td:nth-child(2) div:nth-child(5)"
+                    )
+                    else False
+                )
+            else:
+                list_items = page.query_selector_all("#subnav2 li")
+                if len(list_items) >= 3:
+                    mid_div = page.query_selector("#bkdetailform .infobox")
+                    if "session logged as completed" in mid_div.inner_text().lower():
+                        notes_tab = page.query_selector(
+                            ".fancybox-skin #subnav2 li:nth-child(2)"
                         )
                         notes_tab.wait_for_element_state("visible", timeout=10000)
                         notes_tab.wait_for_element_state("stable", timeout=10000)
@@ -3156,25 +2533,194 @@ def submit_after_log_off(
 
                         submit_btn = page.query_selector("input[onclick*='addnote']")
                         submit_btn.click()
+                        same_client_booking = None
                         page.wait_for_timeout(1000)
+                else:
+                    if len(list_items) < 3:
+                        notes_tab = page.query_selector(
+                            ".fancybox-skin #subnav2 li:nth-child(2)"
+                        )
+                        notes_tab.wait_for_element_state("visible", timeout=10000)
+                        notes_tab.wait_for_element_state("stable", timeout=10000)
+                        notes_tab.click()
+                        page.wait_for_function(
+                            "element => !element.isConnected", arg=notes_tab
+                        )
+                        page.wait_for_selector(
+                            "#subnav2 li.activesublink2", timeout=10000
+                        )
+                        form_details = page.wait_for_selector(
+                            "#bkdetailform", state="visible", timeout=40000
+                        )
+                        page.wait_for_function(
+                            "element => element.isConnected && element.offsetParent !== null",
+                            arg=form_details,
+                        )
+                        page.select_option(
+                            "select[id='bookingnoteclassifyID']",
+                            label="Fitness Related",
+                        )
+                        textarea = page.query_selector("#bookingnotetext")
+                        if textarea:
+                            textarea.fill(notes)
+                        else:
+                            # come here and ad dthe screen capture to follow it bro
+                            screenshot_url = capture_and_upload_screenshot(
+                                page, "no_text_area"
+                            )
+                            raise Exception(
+                                f"No text area found in the booking{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                            )
+
+                        submit_btn = page.query_selector("input[onclick*='addnote']")
+                        submit_btn.click()
+                        same_client_booking = None
+                        page.wait_for_timeout(1000)
+
                     else:
                         screenshot_url = capture_and_upload_screenshot(
-                            page, "no_matching_booking"
+                            page, "no_session_logged"
                         )
                         raise Exception(
-                            f"No matching booking found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                            f"No session logged{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
                         )
+
+        else:
+            screenshot_url = capture_and_upload_screenshot(page, "no_matching_booking")
+            raise Exception(
+                f"No matching booking found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+            )
+
+        if same_client_booking:
+            all_bookings = page.query_selector_all("table[class*='bookby']")
+            same_client_booking = all_bookings[matching_index + 1]
+            booking_number_elem = same_client_booking.query_selector(
+                "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
+            )
+            booking_number_elem.wait_for_element_state("visible", timeout=10000)
+            booking_number_elem.wait_for_element_state("stable", timeout=10000)
+            booking_number_elem.click()
+
+            more_modal = page.wait_for_selector(
+                ".fancybox-skin",
+                state="visible",
+                timeout=10000,
+            )
+            log_off_tab = more_modal.query_selector("#subnav2 li:last-child")
+            log_off_tab.wait_for_element_state("visible", timeout=10000)
+            log_off_tab.wait_for_element_state("stable", timeout=10000)
+            log_off_tab.click()
+            page.wait_for_function("element => !element.isConnected", arg=log_off_tab)
+            page.wait_for_selector("#subnav2 li.activesublink2", timeout=10000)
+            form_details = page.wait_for_selector(
+                "#bkdetailform", state="visible", timeout=40000
+            )
+            page.wait_for_function(
+                "element => element.isConnected && element.offsetParent !== null",
+                arg=form_details,
+            )
+
+            booking_successful = page.query_selector(".baseline #lg_stat5")
+            if booking_successful:
+                booking_successful.wait_for_element_state("visible", timeout=10000)
+                booking_successful.wait_for_element_state("stable", timeout=10000)
+                booking_successful.click()
+                page.wait_for_function(
+                    "element => element.getAttribute('src') === '/images/bookingstatus5.png'",
+                    arg=booking_successful,
+                    timeout=10000,
+                )
+            text_area = page.query_selector("#bkdetailform textarea#note")
+            if text_area:
+                text_area.fill(notes)
+            else:
+                screenshot_url = capture_and_upload_screenshot(page, "no_text_area")
+                raise Exception(
+                    f"No text area found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                )
+
+            log_off_btn = page.query_selector("#logbutton input:first-child")
+            log_off_btn.wait_for_element_state("visible", timeout=10000)
+            log_off_btn.wait_for_element_state("stable", timeout=10000)
+
+            log_off_btn.click()
+            page.wait_for_timeout(600)
+            unpaid_modal = (
+                True
+                if matching_booking.query_selector(
+                    "table tbody tr td:nth-child(2) div:nth-child(5)"
+                )
+                else False
+            )
+        return same_client_period, unpaid_modal
+
+    try:
+        playwright = sync_playwright().start()
+        browser = playwright.chromium.launch(headless=True)
+        context = browser.new_context()
+        page = context.new_page()
+
+        page.goto(INITIAL_URL)
+        page.fill("input[name='uid']", username)
+        page.fill("input[name='pw']", password)
+        page.click("input[type='submit']")
+        page.wait_for_load_state("networkidle", timeout=0)
+        base_url = page.url
+        if "Dashboard" in base_url:
+            page.goto("https://app.clubready.com/admin/schedulingdayview.asp")
+            page.wait_for_load_state("networkidle", timeout=0)
+
+            all_bookings_cards = get_bookings(page)
+
+            if len(all_bookings_cards) > 0:
+                same_client_period, unpaid_modal = handle_submission(
+                    page, all_bookings_cards
+                )
+            else:
+                screenshot_url = capture_and_upload_screenshot(page, "no_container")
+                raise Exception(
+                    f"No container found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                )
+            # remove_notes(user_id, all_bookings)
+
+        else:
+            print(location, "location")
+            page.wait_for_selector("select[name='stores']")
+            select_element = page.query_selector("select[name='stores']")
+            options = select_element.query_selector_all("option")
+            option = None
+            for opt in options:
+                if opt.inner_text().lower() == location.lower():
+                    option = opt
+                    break
+            if option:
+                option.click()
+                page.click("input[name='Submit2']")
+                page.wait_for_load_state("networkidle", timeout=0)
+                page.goto("https://app.clubready.com/admin/schedulingdayview.asp")
+                page.wait_for_load_state("networkidle", timeout=0)
+
+                all_bookings_cards = get_bookings(page)
+
+                if len(all_bookings_cards) > 0:
+                    same_client_period, unpaid_modal = handle_submission(
+                        page, all_bookings_cards
+                    )
                 else:
                     screenshot_url = capture_and_upload_screenshot(page, "no_container")
                     raise Exception(
                         f"No container found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
                     )
 
-                return {
-                    "status": True,
-                    "same_client_period": same_client_period,
-                    "message": "Notes submitted successfully",
-                }
+        return {
+            "status": True,
+            "same_client_period": same_client_period,
+            "message": (
+                "Heads Up - Session was logged off, but unpaid.  Ask front desk team to process payment"
+                if unpaid_modal
+                else "Notes submitted successfully"
+            ),
+        }
 
     except Exception as e:
         print(f"An error occurred during submitting notes: {str(e)}")
@@ -3193,7 +2739,9 @@ def submit_after_log_off(
             playwright.stop()
 
 
-def log_off_booking(username, password, period, location=None, client_name=None):
+def submit_after_log_off(
+    username, password, period, notes, location=None, client_name=None
+):
     password = reverse_hash_credentials(username, password)
     playwright = None
     browser = None
@@ -3222,6 +2770,117 @@ def log_off_booking(username, password, period, location=None, client_name=None)
             logging.error(f"Failed to capture/upload screenshot: {_s3e}")
             return None
 
+    def get_bookings(page):
+        my_booking_tab = page.wait_for_selector(
+            "#dvtab1", state="visible", timeout=40000
+        )
+        my_booking_tab.click()
+        all_bookings_cards = []
+
+        all_bookings_cards = (
+            page.query_selector_all("table[class*='bookby']")
+            if page.query_selector_all("table[class*='bookby']")
+            else []
+        )
+        return all_bookings_cards
+
+    def handle_submission(page, all_bookings_cards):
+        unpaid_modal = False
+        modal_details = None
+        same_client_booking = None
+        same_client_period = None
+        matching_booking = None
+        matching_index = -1
+        print(f"Bookings found for location: {location} {len(all_bookings_cards)}")
+
+        matching_booking = None
+        matching_index = -1
+
+        for i, div in enumerate(all_bookings_cards):
+            event_date = div.query_selector(
+                "table tbody tr td:nth-child(2) .headertxt"
+            ).inner_text()
+            print(event_date, period)
+            print(event_date == period)
+            if event_date == period:
+                matching_booking = div
+                matching_index = i
+                break
+
+        if (
+            matching_booking
+            and matching_index >= 0
+            and matching_index + 1 < len(all_bookings_cards)
+        ):
+            check_client = (
+                all_bookings_cards[matching_index + 1]
+                .query_selector("table tbody tr td:nth-child(3) a strong")
+                .inner_text()
+                .lower()
+            )
+            if check_client == client_name:
+                same_client_booking = all_bookings_cards[matching_index + 1]
+                same_client_period = same_client_booking.query_selector(
+                    "table tbody tr td:nth-child(2) .headertxt"
+                ).inner_text()
+                print(
+                    f"Found next booking for same client at index {matching_index + 1}"
+                )
+            else:
+                print(
+                    f"Found next booking for different client at index {matching_index + 1}"
+                )
+
+        if matching_booking:
+            booking_number_elem = matching_booking.query_selector(
+                "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
+            )
+            booking_number_elem.wait_for_element_state("visible", timeout=10000)
+            booking_number_elem.wait_for_element_state("stable", timeout=10000)
+            booking_number_elem.click()
+
+            more_modal = page.wait_for_selector(
+                ".fancybox-skin",
+                state="visible",
+                timeout=10000,
+            )
+            notes_tab = more_modal.query_selector("#subnav2 li:nth-child(2)")
+            notes_tab.wait_for_element_state("visible", timeout=10000)
+            notes_tab.wait_for_element_state("stable", timeout=10000)
+            notes_tab.click()
+            page.wait_for_function("element => !element.isConnected", arg=notes_tab)
+            page.wait_for_selector("#subnav2 li.activesublink2", timeout=10000)
+            form_details = page.wait_for_selector(
+                "#bkdetailform", state="visible", timeout=40000
+            )
+            page.wait_for_function(
+                "element => element.isConnected && element.offsetParent !== null",
+                arg=form_details,
+            )
+            page.select_option(
+                "select[id='bookingnoteclassifyID']", label="Fitness Related"
+            )
+            textarea = page.query_selector("#bookingnotetext")
+            if textarea:
+                textarea.fill(notes)
+            else:
+                # come here and ad dthe screen capture to follow it bro
+                screenshot_url = capture_and_upload_screenshot(page, "no_text_area")
+                raise Exception(
+                    f"No text area found in the booking{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                )
+
+            submit_btn = page.query_selector("input[onclick*='addnote']")
+            submit_btn.click()
+            page.wait_for_timeout(1000)
+
+        else:
+            screenshot_url = capture_and_upload_screenshot(page, "no_matching_booking")
+            raise Exception(
+                f"No matching booking found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+            )
+        return same_client_period
+
     try:
         playwright = sync_playwright().start()
         browser = playwright.chromium.launch(headless=True)
@@ -3238,271 +2897,19 @@ def log_off_booking(username, password, period, location=None, client_name=None)
             page.goto("https://app.clubready.com/admin/schedulingdayview.asp")
             page.wait_for_load_state("networkidle", timeout=0)
 
-            my_booking_tab = page.wait_for_selector(
-                "#dvtab1", state="visible", timeout=40000
-            )
-            my_booking_tab.click()
-            all_bookings_cards = []
+            all_bookings_cards = get_bookings(page)
 
-            all_bookings_cards = (
-                page.query_selector_all("table[class*='bookby']")
-                if page.query_selector_all("table[class*='bookby']")
-                else []
-            )
-
-            unpaid_modal = False
             if len(all_bookings_cards) > 0:
-                print(
-                    f"Bookings found for location: {location} {len(all_bookings_cards)}"
-                )
+                same_client_period = handle_submission(page, all_bookings_cards)
 
-                matching_booking = None
-                matching_index = -1
-
-                for i, div in enumerate(all_bookings_cards):
-                    event_date = div.query_selector(
-                        "table tbody tr td:nth-child(2) .headertxt"
-                    ).inner_text()
-                    print(event_date, period)
-                    print(event_date == period)
-                    if event_date == period:
-                        matching_booking = div
-                        matching_index = i
-                        break
-
-                if (
-                    matching_booking
-                    and matching_index >= 0
-                    and matching_index + 1 < len(all_bookings_cards)
-                ):
-                    check_client = (
-                        all_bookings_cards[matching_index + 1]
-                        .query_selector("table tbody tr td:nth-child(3) a strong")
-                        .inner_text()
-                        .lower()
-                    )
-                    if check_client == client_name:
-                        same_client_booking = all_bookings_cards[matching_index + 1]
-                        same_client_period = same_client_booking.query_selector(
-                            "table tbody tr td:nth-child(2) .headertxt"
-                        ).inner_text()
-                        print(
-                            f"Found next booking for same client at index {matching_index + 1}"
-                        )
-                    else:
-                        print(
-                            f"Found next booking for different client at index {matching_index + 1}"
-                        )
-
-                if matching_booking:
-                    booking_number_elem = matching_booking.query_selector(
-                        "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
-                    )
-                    booking_number_elem.wait_for_element_state("visible", timeout=10000)
-                    booking_number_elem.wait_for_element_state("stable", timeout=10000)
-                    booking_number_elem.click()
-
-                    more_modal = page.wait_for_selector(
-                        ".fancybox-skin",
-                        state="visible",
-                        timeout=10000,
-                    )
-                    log_off_tab = more_modal.query_selector("#subnav2 li:last-child")
-                    log_off_tab.wait_for_element_state("visible", timeout=10000)
-                    log_off_tab.wait_for_element_state("stable", timeout=10000)
-                    log_off_tab.click()
-                    page.wait_for_function(
-                        "element => !element.isConnected", arg=log_off_tab
-                    )
-                    page.wait_for_selector("#subnav2 li.activesublink2", timeout=10000)
-                    form_details = page.wait_for_selector(
-                        "#bkdetailform", state="visible", timeout=40000
-                    )
-                    page.wait_for_function(
-                        "element => element.isConnected && element.offsetParent !== null",
-                        arg=form_details,
-                    )
-
-                    booking_successful = page.query_selector(".baseline #lg_stat5")
-                    if booking_successful:
-                        booking_successful.wait_for_element_state(
-                            "visible", timeout=10000
-                        )
-                        booking_successful.wait_for_element_state(
-                            "stable", timeout=10000
-                        )
-                        booking_successful.click()
-                        page.wait_for_function(
-                            "element => element.getAttribute('src') === '/images/bookingstatus5.png'",
-                            arg=booking_successful,
-                            timeout=10000,
-                        )
-
-                        text_area = page.query_selector("#bkdetailform textarea#note")
-                        notes = "Client showed up"
-                        if text_area:
-                            text_area.fill(notes)
-                        else:
-                            screenshot_url = capture_and_upload_screenshot(
-                                page, "no_text_area"
-                            )
-                            raise Exception(
-                                f"No text area found in the booking{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                            )
-
-                        log_off_btn = page.query_selector(
-                            "#logbutton input:first-child"
-                        )
-                        log_off_btn.wait_for_element_state("visible", timeout=10000)
-                        log_off_btn.wait_for_element_state("stable", timeout=10000)
-                        log_off_btn.click()
-                        page.wait_for_timeout(1000)
-
-                        unpaid_modal = (
-                            True
-                            if matching_booking.query_selector(
-                                "table tbody tr td:nth-child(2) div:nth-child(5)"
-                            )
-                            else False
-                        )
-                    else:
-                        mid_div = page.query_selector("#bkdetailform .infobox")
-                        if mid_div:
-                            if (
-                                "session logged as completed"
-                                not in mid_div.inner_text().lower()
-                            ):
-                                screenshot_url = capture_and_upload_screenshot(
-                                    page, "log_off_error"
-                                )
-                                raise Exception(
-                                    f"No log off button {f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                                )
-
-                        else:
-                            screenshot_url = capture_and_upload_screenshot(
-                                page, "log_off_error"
-                            )
-                            raise Exception(
-                                f"No log off button {f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                            )
-
-                else:
-                    screenshot_url = capture_and_upload_screenshot(
-                        page, "no_matching_booking"
-                    )
-                    raise Exception(
-                        f"No matching booking found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                    )
-
-                if same_client_booking:
-                    all_bookings = page.query_selector_all("table[class*='bookby']")
-                    same_client_booking = all_bookings[matching_index + 1]
-                    booking_number_elem = same_client_booking.query_selector(
-                        "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
-                    )
-                    booking_number_elem.wait_for_element_state("visible", timeout=10000)
-                    booking_number_elem.wait_for_element_state("stable", timeout=10000)
-                    booking_number_elem.click()
-
-                    more_modal = page.wait_for_selector(
-                        ".fancybox-skin",
-                        state="visible",
-                        timeout=10000,
-                    )
-                    log_off_tab = more_modal.query_selector("#subnav2 li:last-child")
-                    log_off_tab.wait_for_element_state("visible", timeout=10000)
-                    log_off_tab.wait_for_element_state("stable", timeout=10000)
-                    log_off_tab.click()
-                    page.wait_for_function(
-                        "element => !element.isConnected", arg=log_off_tab
-                    )
-                    page.wait_for_selector("#subnav2 li.activesublink2", timeout=10000)
-                    form_details = page.wait_for_selector(
-                        "#bkdetailform", state="visible", timeout=40000
-                    )
-                    page.wait_for_function(
-                        "element => element.isConnected && element.offsetParent !== null",
-                        arg=form_details,
-                    )
-
-                    booking_successful = page.query_selector(".baseline #lg_stat5")
-                    if booking_successful:
-                        booking_successful.wait_for_element_state(
-                            "visible", timeout=10000
-                        )
-                        booking_successful.wait_for_element_state(
-                            "stable", timeout=10000
-                        )
-                        booking_successful.click()
-                        page.wait_for_function(
-                            "element => element.getAttribute('src') === '/images/bookingstatus5.png'",
-                            arg=booking_successful,
-                            timeout=10000,
-                        )
-                        text_area = page.query_selector("#bkdetailform textarea#note")
-                        notes = "Client showed up"
-                        if text_area:
-                            text_area.fill(notes)
-                        else:
-                            screenshot_url = capture_and_upload_screenshot(
-                                page, "no_text_area"
-                            )
-                            raise Exception(
-                                f"No text area found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                            )
-
-                        log_off_btn = page.query_selector(
-                            "#logbutton input:first-child"
-                        )
-                        log_off_btn.wait_for_element_state("visible", timeout=10000)
-                        log_off_btn.wait_for_element_state("stable", timeout=10000)
-
-                        log_off_btn.click()
-                        page.wait_for_timeout(600)
-                        unpaid_modal = (
-                            True
-                            if matching_booking.query_selector(
-                                "table tbody tr td:nth-child(2) div:nth-child(5)"
-                            )
-                            else False
-                        )
-                    else:
-                        mid_div = page.query_selector("#bkdetailform .infobox")
-                        if mid_div:
-                            if (
-                                "session logged as completed"
-                                not in mid_div.inner_text().lower()
-                            ):
-                                screenshot_url = capture_and_upload_screenshot(
-                                    page, "log_off_error"
-                                )
-                                raise Exception(
-                                    f"No log off button {f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                                )
-                        else:
-                            screenshot_url = capture_and_upload_screenshot(
-                                page, "log_off_error"
-                            )
-                            raise Exception(
-                                f"No log off button {f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                            )
             else:
                 screenshot_url = capture_and_upload_screenshot(page, "no_container")
                 raise Exception(
                     f"No container found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
                 )
-            # remove_notes(user_id, all_bookings)
-            return {
-                "status": True,
-                "same_client_period": same_client_period,
-                "message": (
-                    "Session was logged off, but unpaid"
-                    if unpaid_modal
-                    else "Session logged off"
-                ),
-            }
+
         else:
+            print(location, "location")
             page.wait_for_selector("select[name='stores']")
             select_element = page.query_selector("select[name='stores']")
             options = select_element.query_selector_all("option")
@@ -3517,290 +2924,365 @@ def log_off_booking(username, password, period, location=None, client_name=None)
                 page.wait_for_load_state("networkidle", timeout=0)
                 page.goto("https://app.clubready.com/admin/schedulingdayview.asp")
                 page.wait_for_load_state("networkidle", timeout=0)
-                my_booking_tab = page.wait_for_selector(
-                    "#dvtab1", state="visible", timeout=40000
-                )
-                my_booking_tab.click()
-                all_bookings_cards = []
+                all_bookings_cards = get_bookings(page)
 
-                all_bookings_cards = (
-                    page.query_selector_all("table[class*='bookby']")
-                    if page.query_selector_all("table[class*='bookby']")
-                    else []
-                )
-
-                unpaid_modal = False
                 if len(all_bookings_cards) > 0:
-                    print(
-                        f"Bookings found for location: {location} {len(all_bookings_cards)}"
+                    same_client_period = handle_submission(page, all_bookings_cards)
+
+                else:
+                    screenshot_url = capture_and_upload_screenshot(page, "no_container")
+                    raise Exception(
+                        f"No container found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                    )
+        return {
+            "status": True,
+            "same_client_period": same_client_period,
+            "message": "Notes submitted successfully",
+        }
+
+    except Exception as e:
+        print(f"An error occurred during submitting notes: {str(e)}")
+        screenshot_url = capture_and_upload_screenshot(page, "no_container")
+        raise Exception(
+            f"{str(e)}{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+        )
+    finally:
+        if page:
+            page.close()
+        if context:
+            context.close()
+        if browser:
+            browser.close()
+        if playwright:
+            playwright.stop()
+
+
+def log_off_booking(username, password, period, location=None, client_name=None):
+    password = reverse_hash_credentials(username, password)
+    playwright = None
+    browser = None
+    context = None
+    page = None
+    modal_details = None
+
+    def capture_and_upload_screenshot(local_page, label):
+        try:
+            png_bytes = local_page.screenshot(full_page=True)
+            image_name = f"errors/{int(time.time())}_{uuid.uuid4().hex}_{label}.png"
+
+            result = save_error_image_to_s3(
+                BytesIO(png_bytes), image_name, content_type="image/png"
+            )
+            if isinstance(result, dict) and result.get("status") == "success":
+                return result.get("url")
+            else:
+                logging.error(
+                    f"S3 upload failed: {result.get('message', 'Unknown error')}"
+                )
+                return None
+        except Exception as _s3e:
+            logging.error(f"Failed to capture/upload screenshot: {_s3e}")
+            return None
+
+    def get_bookings(page):
+        my_booking_tab = page.wait_for_selector(
+            "#dvtab1", state="visible", timeout=40000
+        )
+        my_booking_tab.click()
+        all_bookings_cards = []
+
+        all_bookings_cards = (
+            page.query_selector_all("table[class*='bookby']")
+            if page.query_selector_all("table[class*='bookby']")
+            else []
+        )
+        return all_bookings_cards
+
+    def handle_log_off(page, all_bookings_cards):
+        same_client_booking = None
+        same_client_period = None
+        unpaid_modal = False
+
+        print(f"Bookings found for location: {location} {len(all_bookings_cards)}")
+
+        matching_booking = None
+        matching_index = -1
+
+        for i, div in enumerate(all_bookings_cards):
+            event_date = div.query_selector(
+                "table tbody tr td:nth-child(2) .headertxt"
+            ).inner_text()
+            print(event_date, period)
+            print(event_date == period)
+            if event_date == period:
+                matching_booking = div
+                matching_index = i
+                break
+
+        if (
+            matching_booking
+            and matching_index >= 0
+            and matching_index + 1 < len(all_bookings_cards)
+        ):
+            check_client = (
+                all_bookings_cards[matching_index + 1]
+                .query_selector("table tbody tr td:nth-child(3) a strong")
+                .inner_text()
+                .lower()
+            )
+            if check_client == client_name:
+                same_client_booking = all_bookings_cards[matching_index + 1]
+                same_client_period = same_client_booking.query_selector(
+                    "table tbody tr td:nth-child(2) .headertxt"
+                ).inner_text()
+                print(
+                    f"Found next booking for same client at index {matching_index + 1}"
+                )
+            else:
+                print(
+                    f"Found next booking for different client at index {matching_index + 1}"
+                )
+
+        if matching_booking:
+            booking_number_elem = matching_booking.query_selector(
+                "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
+            )
+            booking_number_elem.wait_for_element_state("visible", timeout=10000)
+            booking_number_elem.wait_for_element_state("stable", timeout=10000)
+            booking_number_elem.click()
+
+            more_modal = page.wait_for_selector(
+                ".fancybox-skin",
+                state="visible",
+                timeout=10000,
+            )
+            log_off_tab = more_modal.query_selector("#subnav2 li:last-child")
+            log_off_tab.wait_for_element_state("visible", timeout=10000)
+            log_off_tab.wait_for_element_state("stable", timeout=10000)
+            log_off_tab.click()
+            page.wait_for_function("element => !element.isConnected", arg=log_off_tab)
+            page.wait_for_selector("#subnav2 li.activesublink2", timeout=10000)
+            form_details = page.wait_for_selector(
+                "#bkdetailform", state="visible", timeout=40000
+            )
+            page.wait_for_function(
+                "element => element.isConnected && element.offsetParent !== null",
+                arg=form_details,
+            )
+
+            booking_successful = page.query_selector(".baseline #lg_stat5")
+            if booking_successful:
+                booking_successful.wait_for_element_state("visible", timeout=10000)
+                booking_successful.wait_for_element_state("stable", timeout=10000)
+                booking_successful.click()
+                page.wait_for_function(
+                    "element => element.getAttribute('src') === '/images/bookingstatus5.png'",
+                    arg=booking_successful,
+                    timeout=10000,
+                )
+
+                text_area = page.query_selector("#bkdetailform textarea#note")
+                notes = "Client showed up"
+                if text_area:
+                    text_area.fill(notes)
+                else:
+                    screenshot_url = capture_and_upload_screenshot(page, "no_text_area")
+                    raise Exception(
+                        f"No text area found in the booking{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
                     )
 
-                    matching_booking = None
-                    matching_index = -1
+                log_off_btn = page.query_selector("#logbutton input:first-child")
+                log_off_btn.wait_for_element_state("visible", timeout=10000)
+                log_off_btn.wait_for_element_state("stable", timeout=10000)
 
-                    for i, div in enumerate(all_bookings_cards):
-                        event_date = div.query_selector(
-                            "table tbody tr td:nth-child(2) .headertxt"
-                        ).inner_text()
-                        print(event_date, period)
-                        print(event_date == period)
-                        if event_date == period:
-                            matching_booking = div
-                            matching_index = i
-                            break
-
+                log_off_btn.click()
+                page.wait_for_timeout(1000)
+                unpaid_modal = (
+                    True
+                    if matching_booking.query_selector(
+                        "table tbody tr td:nth-child(2) div:nth-child(5)"
+                    )
+                    else False
+                )
+            else:
+                mid_div = page.query_selector("#bkdetailform .infobox")
+                if mid_div:
                     if (
-                        matching_booking
-                        and matching_index >= 0
-                        and matching_index + 1 < len(all_bookings_cards)
+                        "session logged as completed"
+                        not in mid_div.inner_text().lower()
                     ):
-                        check_client = (
-                            all_bookings_cards[matching_index + 1]
-                            .query_selector("table tbody tr td:nth-child(3) a strong")
-                            .inner_text()
-                            .lower()
-                        )
-                        if check_client == client_name:
-                            same_client_booking = all_bookings_cards[matching_index + 1]
-                            same_client_period = same_client_booking.query_selector(
-                                "table tbody tr td:nth-child(2) .headertxt"
-                            ).inner_text()
-                            print(
-                                f"Found next booking for same client at index {matching_index + 1}"
-                            )
-                        else:
-                            print(
-                                f"Found next booking for different client at index {matching_index + 1}"
-                            )
-
-                    if matching_booking:
-                        booking_number_elem = matching_booking.query_selector(
-                            "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
-                        )
-                        booking_number_elem.wait_for_element_state(
-                            "visible", timeout=10000
-                        )
-                        booking_number_elem.wait_for_element_state(
-                            "stable", timeout=10000
-                        )
-                        booking_number_elem.click()
-
-                        more_modal = page.wait_for_selector(
-                            ".fancybox-skin",
-                            state="visible",
-                            timeout=10000,
-                        )
-                        log_off_tab = more_modal.query_selector(
-                            "#subnav2 li:last-child"
-                        )
-                        log_off_tab.wait_for_element_state("visible", timeout=10000)
-                        log_off_tab.wait_for_element_state("stable", timeout=10000)
-                        log_off_tab.click()
-                        page.wait_for_function(
-                            "element => !element.isConnected", arg=log_off_tab
-                        )
-                        page.wait_for_selector(
-                            "#subnav2 li.activesublink2", timeout=10000
-                        )
-                        form_details = page.wait_for_selector(
-                            "#bkdetailform", state="visible", timeout=40000
-                        )
-                        page.wait_for_function(
-                            "element => element.isConnected && element.offsetParent !== null",
-                            arg=form_details,
-                        )
-
-                        booking_successful = page.query_selector(".baseline #lg_stat5")
-                        if booking_successful:
-                            booking_successful.wait_for_element_state(
-                                "visible", timeout=10000
-                            )
-                            booking_successful.wait_for_element_state(
-                                "stable", timeout=10000
-                            )
-                            booking_successful.click()
-                            page.wait_for_function(
-                                "element => element.getAttribute('src') === '/images/bookingstatus5.png'",
-                                arg=booking_successful,
-                                timeout=10000,
-                            )
-
-                            text_area = page.query_selector(
-                                "#bkdetailform textarea#note"
-                            )
-                            notes = "Client showed up"
-                            if text_area:
-                                text_area.fill(notes)
-                            else:
-                                screenshot_url = capture_and_upload_screenshot(
-                                    page, "no_text_area"
-                                )
-                                raise Exception(
-                                    f"No text area found in the booking{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                                )
-
-                            log_off_btn = page.query_selector(
-                                "#logbutton input:first-child"
-                            )
-                            log_off_btn.wait_for_element_state("visible", timeout=10000)
-                            log_off_btn.wait_for_element_state("stable", timeout=10000)
-
-                            log_off_btn.click()
-                            page.wait_for_timeout(1000)
-                            unpaid_modal = (
-                                True
-                                if matching_booking.query_selector(
-                                    "table tbody tr td:nth-child(2) div:nth-child(5)"
-                                )
-                                else False
-                            )
-                        else:
-                            mid_div = page.query_selector("#bkdetailform .infobox")
-                            if mid_div:
-                                if (
-                                    "session logged as completed"
-                                    not in mid_div.inner_text().lower()
-                                ):
-                                    screenshot_url = capture_and_upload_screenshot(
-                                        page, "log_off_error"
-                                    )
-                                    raise Exception(
-                                        f"No log off button {f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                                    )
-                            else:
-                                screenshot_url = capture_and_upload_screenshot(
-                                    page, "log_off_error"
-                                )
-                                raise Exception(
-                                    f"No log off button {f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                                )
-
-                    else:
                         screenshot_url = capture_and_upload_screenshot(
-                            page, "no_matching_booking"
+                            page, "log_off_error"
                         )
                         raise Exception(
-                            f"No matching booking found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                            f"No log off button {f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
                         )
+                else:
+                    screenshot_url = capture_and_upload_screenshot(
+                        page, "log_off_error"
+                    )
+                    raise Exception(
+                        f"No log off button {f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                    )
 
-                    if same_client_booking:
-                        all_bookings = page.query_selector_all("table[class*='bookby']")
-                        same_client_booking = all_bookings[matching_index + 1]
-                        booking_number_elem = same_client_booking.query_selector(
-                            "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
-                        )
-                        booking_number_elem.wait_for_element_state(
-                            "visible", timeout=10000
-                        )
-                        booking_number_elem.wait_for_element_state(
-                            "stable", timeout=10000
-                        )
-                        booking_number_elem.click()
+        else:
+            screenshot_url = capture_and_upload_screenshot(page, "no_matching_booking")
+            raise Exception(
+                f"No matching booking found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+            )
 
-                        more_modal = page.wait_for_selector(
-                            ".fancybox-skin",
-                            state="visible",
-                            timeout=10000,
-                        )
-                        log_off_tab = more_modal.query_selector(
-                            "#subnav2 li:last-child"
-                        )
-                        log_off_tab.wait_for_element_state("visible", timeout=10000)
-                        log_off_tab.wait_for_element_state("stable", timeout=10000)
-                        log_off_tab.click()
-                        page.wait_for_function(
-                            "element => !element.isConnected", arg=log_off_tab
-                        )
-                        page.wait_for_selector(
-                            "#subnav2 li.activesublink2", timeout=10000
-                        )
-                        form_details = page.wait_for_selector(
-                            "#bkdetailform", state="visible", timeout=40000
-                        )
-                        page.wait_for_function(
-                            "element => element.isConnected && element.offsetParent !== null",
-                            arg=form_details,
-                        )
+        if same_client_booking:
+            all_bookings = page.query_selector_all("table[class*='bookby']")
+            same_client_booking = all_bookings[matching_index + 1]
+            booking_number_elem = same_client_booking.query_selector(
+                "table tbody tr td:nth-child(2) div:nth-child(4) span strong a"
+            )
+            booking_number_elem.wait_for_element_state("visible", timeout=10000)
+            booking_number_elem.wait_for_element_state("stable", timeout=10000)
+            booking_number_elem.click()
 
-                        booking_successful = page.query_selector(".baseline #lg_stat5")
-                        if booking_successful:
-                            booking_successful.wait_for_element_state(
-                                "visible", timeout=10000
-                            )
-                            booking_successful.wait_for_element_state(
-                                "stable", timeout=10000
-                            )
-                            booking_successful.click()
-                            page.wait_for_function(
-                                "element => element.getAttribute('src') === '/images/bookingstatus5.png'",
-                                arg=booking_successful,
-                                timeout=10000,
-                            )
-                            text_area = page.query_selector(
-                                "#bkdetailform textarea#note"
-                            )
-                            notes = "Client showed up"
-                            if text_area:
-                                text_area.fill(notes)
-                            else:
-                                screenshot_url = capture_and_upload_screenshot(
-                                    page, "no_text_area"
-                                )
-                                raise Exception(
-                                    f"No text area found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                                )
+            more_modal = page.wait_for_selector(
+                ".fancybox-skin",
+                state="visible",
+                timeout=10000,
+            )
+            log_off_tab = more_modal.query_selector("#subnav2 li:last-child")
+            log_off_tab.wait_for_element_state("visible", timeout=10000)
+            log_off_tab.wait_for_element_state("stable", timeout=10000)
+            log_off_tab.click()
+            page.wait_for_function("element => !element.isConnected", arg=log_off_tab)
+            page.wait_for_selector("#subnav2 li.activesublink2", timeout=10000)
+            form_details = page.wait_for_selector(
+                "#bkdetailform", state="visible", timeout=40000
+            )
+            page.wait_for_function(
+                "element => element.isConnected && element.offsetParent !== null",
+                arg=form_details,
+            )
 
-                            log_off_btn = page.query_selector(
-                                "#logbutton input:first-child"
-                            )
-                            log_off_btn.wait_for_element_state("visible", timeout=10000)
-                            log_off_btn.wait_for_element_state("stable", timeout=10000)
+            booking_successful = page.query_selector(".baseline #lg_stat5")
+            if booking_successful:
+                booking_successful.wait_for_element_state("visible", timeout=10000)
+                booking_successful.wait_for_element_state("stable", timeout=10000)
+                booking_successful.click()
+                page.wait_for_function(
+                    "element => element.getAttribute('src') === '/images/bookingstatus5.png'",
+                    arg=booking_successful,
+                    timeout=10000,
+                )
+                text_area = page.query_selector("#bkdetailform textarea#note")
+                notes = "Client showed up"
+                if text_area:
+                    text_area.fill(notes)
+                else:
+                    screenshot_url = capture_and_upload_screenshot(page, "no_text_area")
+                    raise Exception(
+                        f"No text area found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                    )
 
-                            log_off_btn.click()
-                            page.wait_for_timeout(600)
-                            unpaid_modal = (
-                                True
-                                if matching_booking.query_selector(
-                                    "table tbody tr td:nth-child(2) div:nth-child(5)"
-                                )
-                                else False
-                            )
-                        else:
-                            mid_div = page.query_selector("#bkdetailform .infobox")
-                            if mid_div:
-                                if (
-                                    "session logged as completed"
-                                    not in mid_div.inner_text().lower()
-                                ):
-                                    screenshot_url = capture_and_upload_screenshot(
-                                        page, "log_off_error"
-                                    )
-                                    raise Exception(
-                                        f"No log off button {f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                                    )
-                            else:
-                                screenshot_url = capture_and_upload_screenshot(
-                                    page, "log_off_error"
-                                )
-                                raise Exception(
-                                    f"No log off button {f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
-                                )
+                log_off_btn = page.query_selector("#logbutton input:first-child")
+                log_off_btn.wait_for_element_state("visible", timeout=10000)
+                log_off_btn.wait_for_element_state("stable", timeout=10000)
+
+                log_off_btn.click()
+                page.wait_for_timeout(600)
+                unpaid_modal = (
+                    True
+                    if matching_booking.query_selector(
+                        "table tbody tr td:nth-child(2) div:nth-child(5)"
+                    )
+                    else False
+                )
+            else:
+                mid_div = page.query_selector("#bkdetailform .infobox")
+                if mid_div:
+                    if (
+                        "session logged as completed"
+                        not in mid_div.inner_text().lower()
+                    ):
+                        screenshot_url = capture_and_upload_screenshot(
+                            page, "log_off_error"
+                        )
+                        raise Exception(
+                            f"No log off button {f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                        )
+                else:
+                    screenshot_url = capture_and_upload_screenshot(
+                        page, "log_off_error"
+                    )
+                    raise Exception(
+                        f"No log off button {f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                    )
+
+        return same_client_period, unpaid_modal
+
+    try:
+        playwright = sync_playwright().start()
+        browser = playwright.chromium.launch(headless=True)
+        context = browser.new_context()
+        page = context.new_page()
+
+        page.goto(INITIAL_URL)
+        page.fill("input[name='uid']", username)
+        page.fill("input[name='pw']", password)
+        page.click("input[type='submit']")
+        page.wait_for_load_state("networkidle", timeout=0)
+        base_url = page.url
+        if "Dashboard" in base_url:
+            page.goto("https://app.clubready.com/admin/schedulingdayview.asp")
+            page.wait_for_load_state("networkidle", timeout=0)
+
+            all_bookings_cards = get_bookings(page)
+
+            unpaid_modal = False
+            if len(all_bookings_cards) > 0:
+                same_client_period, unpaid_modal = handle_log_off(
+                    page, all_bookings_cards
+                )
+            else:
+                screenshot_url = capture_and_upload_screenshot(page, "no_container")
+                raise Exception(
+                    f"No container found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
+                )
+            # remove_notes(user_id, all_bookings)
+        else:
+            print(location, "location")
+            page.wait_for_selector("select[name='stores']")
+            select_element = page.query_selector("select[name='stores']")
+            options = select_element.query_selector_all("option")
+            option = None
+            for opt in options:
+                if opt.inner_text().lower() == location.lower():
+                    option = opt
+                    break
+            if option:
+                option.click()
+                page.click("input[name='Submit2']")
+                page.wait_for_load_state("networkidle", timeout=0)
+                page.goto("https://app.clubready.com/admin/schedulingdayview.asp")
+                page.wait_for_load_state("networkidle", timeout=0)
+                all_bookings_cards = get_bookings(page)
+
+                if len(all_bookings_cards) > 0:
+                    same_client_period, unpaid_modal = handle_log_off(
+                        page, all_bookings_cards
+                    )
+
                 else:
                     screenshot_url = capture_and_upload_screenshot(page, "no_container")
                     raise Exception(
                         f"No container found{f' | screenshot: {screenshot_url}' if screenshot_url else ''}"
                     )
                 # remove_notes(user_id, all_bookings)
-                return {
-                    "status": True,
-                    "same_client_period": same_client_period,
-                    "message": (
-                        "Session was logged off, but unpaid"
-                        if unpaid_modal
-                        else "Session logged off"
-                    ),
-                }
-
+        return {
+            "status": True,
+            "same_client_period": same_client_period,
+            "message": (
+                "Session was logged off, but unpaid"
+                if unpaid_modal
+                else "Session logged off"
+            ),
+        }
     except Exception as e:
         print(f"An error occurred during logging off notes: {str(e)}")
         screenshot_url = capture_and_upload_screenshot(page, "no_container")

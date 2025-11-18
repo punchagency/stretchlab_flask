@@ -600,6 +600,70 @@ def bulk_invite_users(token):
         return jsonify({"error": str(e), "status": "error"}), 500
 
 
+@routes.route("/remove-user", methods=["POST"])
+@require_bearer_token
+def remove_user(token):
+    try:
+        user_data = decode_jwt_token(token)
+        check_user_exists_and_is_admin = (
+            supabase.table("users")
+            .select("*, roles(name)")
+            .eq("id", user_data["user_id"])
+            .eq("username", user_data["username"])
+            .in_("role_id", [1, 2, 4, 8])
+            .single()
+            .execute()
+            .data
+        )
+        data = request.get_json()
+
+        user_id = int(data.get("id", None))
+
+        if not user_id:
+            return (
+                jsonify({"message": "Payload not complete", "status": "error"}),
+                400,
+            )
+
+        if not check_user_exists_and_is_admin:
+            return (
+                jsonify({"message": "User is not an admin", "status": "error"}),
+                401,
+            )
+        user = (
+            supabase.table("users")
+            .select("*")
+            .eq("id", user_id)
+            .eq("username", check_user_exists_and_is_admin.get("username"))
+            .single()
+            .execute()
+            .data
+        )
+        if not user:
+            return (
+                jsonify({"message": "User does not exist", "status": "error"}),
+                404,
+            )
+
+        if user.get("status") != 3:
+            return (
+                jsonify(
+                    {"message": "User already accepted request", "status": "error"}
+                ),
+                400,
+            )
+        supabase.table("users").delete().eq("id", user.get("id")).execute()
+
+        return (
+            jsonify({"message": "User removed", "status": "error"}),
+            200,
+        )
+
+    except Exception as e:
+        logging.error(f"Error in POST api/admin/process/remove-user: {str(e)}")
+        return jsonify({"error": str(e), "status": "error"}), 500
+
+
 @routes.route("/update-user-status", methods=["POST"])
 @require_bearer_token
 def update_user_status(token):
@@ -608,18 +672,68 @@ def update_user_status(token):
         data = request.get_json()
         email = data.get("email")
         status = data.get("status")
-        supabase.table("users").update({"status": status}).eq("email", email).eq(
-            "admin_id", user_data["user_id"]
-        ).execute()
+
+        updated_user = (
+            supabase.table("users")
+            .update(
+                {
+                    "status": status,
+                    "disabled_at": datetime.now().isoformat() if status == 2 else None,
+                }
+            )
+            .eq("email", email)
+            .eq("admin_id", user_data["user_id"])
+            .execute()
+        )
+
+        # Flexologist exclude logic
+        excluded_flexologists = (
+            supabase.table("robot_process_automation_config")
+            .select("excluded_flexologists")
+            .eq("admin_id", user_data["user_id"])
+            .execute()
+        )
+
+        excluded_flexologists = excluded_flexologists.data[0]["excluded_flexologists"]
+        excluded_list = (
+            json.loads(excluded_flexologists) if excluded_flexologists else []
+        )
+
+        user_id = updated_user.data[0]["id"]
+        flexologist_name_data = (
+            supabase.table("clubready_bookings")
+            .select("flexologist_name")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        flexologist_name = (
+            flexologist_name_data.data[0].get("flexologist_name")
+            if flexologist_name_data.data
+            else None
+        )
+
+        if status == 2:
+            if flexologist_name and flexologist_name not in excluded_list:
+                excluded_list.append(flexologist_name)
+        else:
+            if flexologist_name and flexologist_name in excluded_list:
+                excluded_list.remove(flexologist_name)
+
+        supabase.table("robot_process_automation_config").update(
+            {"excluded_flexologists": excluded_list}
+        ).eq("admin_id", user_data["user_id"]).execute()
+
         insert_notification(
             user_data["user_id"],
-            f"You changed the status of {email} to {status == 1 and 'active' or 'disabled'}",
+            f"Your changed the status of {email} to {'active' if status == 1 else 'disabled'}",
             "note taking",
         )
+
         return (
             jsonify(
                 {
-                    "message": f"User access {status == 1 and 'granted' or 'revoked'} successfully",
+                    "message": f"User access {'granted' if status == 1 else 'revoked'} successfully. {'They will be excluded from audit' if status == 2 else ''}",
                     "status": "success",
                 }
             ),
@@ -636,39 +750,41 @@ def get_users(token):
     try:
         user_data = decode_jwt_token(token)
         is_admin = user_data["role_id"] == 1
-        
+
         query = (
             supabase.table("users")
-            .select("id, email, full_name, status, role_id, invited_at, other_clubready_accounts, clubready_user_id")
-            .in_("role_id", [3, 8]).eq("username", user_data["username"])
+            .select(
+                "id, email, full_name, status, role_id, invited_at, other_clubready_accounts, clubready_user_id"
+            )
+            .in_("role_id", [3, 8])
+            .eq("username", user_data["username"])
         )
-        
+
         employees_from_supabase = query.execute().data
-        
+
         # For admins, merge with Airtable data
         if is_admin:
             employees_from_airtable = get_employee_ownwer()
             existing_emails = {e["email"] for e in employees_from_supabase}
-            
+
             for employee in employees_from_airtable:
                 if employee["email"] not in existing_emails:
                     employee["status"] = None
                     employee["invited_at"] = None
                     employees_from_supabase.append(employee)
-        
-        
+
         account_ids = set()
         for employee in employees_from_supabase:
             if employee.get("status") == 1:
                 if employee.get("clubready_user_id"):
                     account_ids.add(employee["clubready_user_id"])
-                
+
                 if employee.get("other_clubready_accounts"):
                     other_accounts = json.loads(employee["other_clubready_accounts"])
                     for account in other_accounts:
                         if account.get("id"):
                             account_ids.add(account["id"])
-        
+
         location_map = {}
         if account_ids:
             locations_result = (
@@ -677,39 +793,43 @@ def get_users(token):
                 .in_("account_id", list(account_ids))
                 .execute()
             )
-            
+
             for loc in locations_result.data:
                 location_map[loc["account_id"]] = loc["location"]
-        
+
         for employee in employees_from_supabase:
             if employee.get("status") == 1:
                 employee["locations"] = {"total": 0, "list": []}
-                
+
                 # Add primary location
                 primary_id = employee.get("clubready_user_id")
                 if primary_id and primary_id in location_map:
-                    employee["locations"]["list"].append({
-                        "name": location_map[primary_id],
-                        "active": True,
-                        "primary": True
-                    })
+                    employee["locations"]["list"].append(
+                        {
+                            "name": location_map[primary_id],
+                            "active": True,
+                            "primary": True,
+                        }
+                    )
                     employee["locations"]["total"] = 1
-                
+
                 # Add other locations
                 if employee.get("other_clubready_accounts"):
                     other_accounts = json.loads(employee["other_clubready_accounts"])
                     for account in other_accounts:
                         account_id = account.get("id")
                         if account_id and account_id in location_map:
-                            employee["locations"]["list"].append({
-                                "name": location_map[account_id],
-                                "active": account.get("active", False),
-                                "primary": False
-                            })
+                            employee["locations"]["list"].append(
+                                {
+                                    "name": location_map[account_id],
+                                    "active": account.get("active", False),
+                                    "primary": False,
+                                }
+                            )
                             employee["locations"]["total"] += 1
-        
+
         return jsonify({"users": employees_from_supabase, "status": "success"}), 200
-        
+
     except Exception as e:
         logging.error(f"Error in GET /admin/get-users: {str(e)}")
         return jsonify({"error": str(e), "status": "error"}), 500

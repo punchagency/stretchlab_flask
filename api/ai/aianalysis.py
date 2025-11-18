@@ -187,7 +187,7 @@ def format_notes(notes):
 
       # here is an example of a formatted note. Strictly adhere to the format provided:
         **Class**: 23 or Session #26 [if class is not mentioned, do not include it in JSON output]
-        **Maps**: Maps score 38 or somthing like "Composite 48, Mobility 44, Activation  55, Posture 59, Symmetry 48"- this is also Maps, so these keys should be noted as maps [if any information about maps is not mentioned, do not include it in JSON output]
+        **Maps**: Maps score 38, or something like "Composite 48, Mobility 44, Activation  55, Posture 59, Symmetry 48"- this structure is also Maps. Check the context to get more information[if any information about maps is not mentioned, do not include it in JSON output]
         **Phase**: Active [if phase is not mentioned, do not include it in JSON output]
         **Today**: Full body flexibility and mobility improvement 
         **Next**: Focus on shoulders, hip, and abductor regions to address tightness identified in this session.

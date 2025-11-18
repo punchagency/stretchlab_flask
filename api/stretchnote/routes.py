@@ -70,23 +70,37 @@ def background_submit_notes(
     coaching,
     client_date,
     client_tz,
+    supplementary,
+    group_booking,
 ):
     def local_get_client_datetime():
         tz = pytz.timezone(client_tz)
         return datetime.now(tz)
 
     try:
-        updated_data = (
-            supabase.table("clubready_bookings")
-            .update(
+        pending_payload = {
+            "task_status": "submitting",
+            "task_message": (
+                "Supplementary note submission running"
+                if supplementary
+                else "Notes submission running"
+            ),
+            "task_id": task_id,
+        }
+
+        if supplementary:
+            pending_payload.update(
                 {
-                    "task_status": "submitting",
-                    "task_message": "Notes submission running",
-                    "task_id": task_id,
-                    "submitted_notes": notes,
-                    "coaching_notes": coaching,
+                    "supplementary_notes": notes,
                 }
             )
+        else:
+            pending_payload.update(
+                {"submitted_notes": notes, "coaching_notes": coaching}
+            )
+        updated_data = (
+            supabase.table("clubready_bookings")
+            .update(pending_payload)
             .eq("client_name", client_name)
             .eq("period", period)
             .eq("created_at", client_date)
@@ -111,70 +125,107 @@ def background_submit_notes(
                 notes,
                 location,
                 client_name,
+                group_booking,
             )
 
         if result["status"]:
-            supabase.table("clubready_bookings").update(
-                {
-                    "submitted": True,
-                    "submitted_at": local_get_client_datetime().strftime(
-                        "%Y-%m-%d %H:%M:%S"
-                    ),
+            timestamp = local_get_client_datetime().strftime("%Y-%m-%d %H:%M:%S")
+            success_payload = {
+                "task_status": "success",
+                "task_message": result["message"],
+                "task_id": task_id,
+                "task_error": None,
+            }
+            if supplementary:
+                success_payload.update(
+                    {
+                        "supplementary_submitted": True,
+                        "updated_at": timestamp,
+                        "supplementary_notes": notes,
+                    }
+                )
+            else:
+                success_payload.update({"submitted": True, "submitted_at": timestamp})
+            supabase.table("clubready_bookings").update(success_payload).eq(
+                "client_name", client_name
+            ).eq("period", period).eq("created_at", client_date).execute()
+            if result["same_client_period"]:
+                timestamp = local_get_client_datetime().strftime("%Y-%m-%d %H:%M:%S")
+                success_payload = {
                     "task_status": "success",
                     "task_message": result["message"],
                     "task_id": task_id,
                     "task_error": None,
                 }
-            ).eq("client_name", client_name).eq("period", period).eq(
-                "created_at", client_date
-            ).execute()
-            if result["same_client_period"]:
-                supabase.table("clubready_bookings").update(
-                    {
-                        "submitted": True,
-                        "submitted_at": local_get_client_datetime().strftime(
-                            "%Y-%m-%d %H:%M:%S"
-                        ),
-                        "submitted_notes": notes,
-                        "coaching_notes": coaching,
-                        "task_status": "success",
-                        "task_message": result["message"],
-                        "task_id": task_id,
-                        "task_error": None,
-                    }
-                ).eq("client_name", client_name).eq(
-                    "period", result["same_client_period"]
-                ).eq(
+                if supplementary:
+                    success_payload.update(
+                        {
+                            "supplementary_submitted": True,
+                            "updated_at": timestamp,
+                            "supplementary_notes": notes,
+                        }
+                    )
+                else:
+                    success_payload.update(
+                        {
+                            "submitted_notes": notes,
+                            "coaching_notes": coaching,
+                            "submitted": True,
+                            "submitted_at": timestamp,
+                        }
+                    )
+                supabase.table("clubready_bookings").update(success_payload).eq(
+                    "client_name", client_name
+                ).eq("period", result["same_client_period"]).eq(
                     "created_at", client_date
                 ).execute()
         else:
-            supabase.table("clubready_bookings").update(
-                {
-                    "task_status": "error",
-                    "task_message": "Notes submission failed",
-                    "task_id": task_id,
-                    "submitted": False,
-                    "submitted_notes": notes,
-                    "coaching_notes": coaching,
-                    "task_error": "No matching booking found",
-                }
-            ).eq("client_name", client_name).eq("period", period).eq(
-                "created_at", client_date
-            ).execute()
+            failed_payload = {
+                "task_status": "error",
+                "task_message": "Notes submission failed",
+                "task_id": task_id,
+                "task_error": "No matching booking found",
+            }
+            if supplementary:
+                failed_payload.update(
+                    {"supplementary_submitted": False, "supplementary_notes": notes}
+                )
+            else:
+                failed_payload.update(
+                    {
+                        "submitted": False,
+                        "submitted_notes": notes,
+                        "coaching_notes": coaching,
+                    }
+                )
+            supabase.table("clubready_bookings").update(failed_payload).eq(
+                "client_name", client_name
+            ).eq("period", period).eq("created_at", client_date).execute()
     except Exception as e:
         logging.error(f"Background task {task_id} failed: {str(e)}")
-        supabase.table("clubready_bookings").update(
-            {
-                "submitted": False,
-                "submitted_at": None,
-                "task_status": "error",
-                "task_message": "Submission failed",
-                "task_id": task_id,
-                "task_error": str(e),
-            }
-        ).eq("client_name", client_name).eq("period", period).eq(
-            "created_at", client_date
-        ).execute()
+        failed_payload = {
+            "task_status": "error",
+            "task_message": "Submission failed",
+            "task_id": task_id,
+            "task_error": str(e),
+        }
+        if supplementary:
+            failed_payload.update(
+                {
+                    "supplementary_submitted": False,
+                    "updated_at": None,
+                }
+            )
+        else:
+            failed_payload.update(
+                {
+                    "submitted": False,
+                    "submitted_at": None,
+                }
+            )
+        supabase.table("clubready_bookings").update(failed_payload).eq(
+            "client_name", client_name
+        ).eq("period", period).eq("created_at", client_date).execute()
 
 
 def background_log_off_booking(
@@ -733,6 +784,7 @@ def get_bookings(token):
                                 "submitted_notes": None,
                                 "created_at": client_date,
                                 "profile_picture": booking["profile_image"],
+                                "group_booking": booking["group_booking"],
                                 "account_id": account_id,
                             }
                         ).execute()
@@ -747,6 +799,7 @@ def get_bookings(token):
                     .execute()
                 )
                 bookings = check_bookings.data
+
             else:
                 return (
                     jsonify(
@@ -758,10 +811,35 @@ def get_bookings(token):
                     400,
                 )
 
+        grouped_bookings_response = []
+        group_buckets = {}
+
+        for booking in bookings:
+            if booking.get("group_booking"):
+                key = (
+                    booking.get("period"),
+                    booking.get("flexologist_name"),
+                )
+                if key not in group_buckets:
+                    group_buckets[key] = {
+                        "group_booking": True,
+                        "event_date": booking.get("period"),
+                        "flexologist_name": booking.get("flexologist_name"),
+                        "flexologist_name": booking.get("account_id"),
+                        "group_bookings": [],
+                    }
+                    grouped_bookings_response.append(group_buckets[key])
+
+                group_buckets[key]["group_bookings"].append(booking)
+            else:
+                grouped_bookings_response.append(booking)
+
+        response_bookings = grouped_bookings_response if group_buckets else bookings
+
         response = {
             "message": f"Bookings fetched successfully",
             "status": "success",
-            "bookings": bookings,
+            "bookings": response_bookings,
         }
         return jsonify(response), 200
 
@@ -1061,7 +1139,7 @@ def get_ai_logic(token):
             ) / len(total_quality_notes_percentage_array)
         else:
             total_average_quality_notes_percentage = 0
-        
+
         print(sum(total_quality_notes_percentage_array))
         print(len(total_quality_notes_percentage_array))
 
@@ -1079,6 +1157,334 @@ def get_ai_logic(token):
         )
     except Exception as e:
         logging.error(f"Error in GET /api/stretchnote/get_ai_insights: {str(e)}")
+        return jsonify({"error": "Internal server error", "status": "error"}), 500
+
+
+@routes.route("/get_ai_information", methods=["GET"])
+@require_bearer_token
+def get_ai_information(token):
+    try:
+        user_data = decode_jwt_token(token)
+        if user_data["role_id"] not in [3, 8]:
+            return (
+                jsonify({"message": "Unauthorized", "status": "error"}),
+                401,
+            )
+        user_id = user_data["user_id"]
+        flexologist_name_data = (
+            supabase.table("clubready_bookings")
+            .select("flexologist_name, users(admin_id)")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+
+        if not flexologist_name_data.data:
+            return (
+                jsonify({"message": "User not found", "status": "error"}),
+                404,
+            )
+
+        flexologist_name = (
+            flexologist_name_data.data[0].get("flexologist_name")
+            if flexologist_name_data.data
+            else None
+        )
+        admin_id = (
+            flexologist_name_data.data[0]["users"]["admin_id"]
+            if flexologist_name_data.data
+            else None
+        )
+        config_result = (
+            supabase.table("robot_process_automation_config")
+            .select("id")
+            .eq("admin_id", admin_id)
+            .single()
+            .execute()
+        )
+
+        if not config_result.data:
+            return jsonify({"error": "No RPA config found", "status": "error"}), 400
+
+        config_id = config_result.data["id"]
+        current_date = datetime.now()
+
+        end_date = (current_date - timedelta(days=1)).replace(
+            hour=23, minute=59, second=59, microsecond=999999
+        )
+        start_date = (end_date - timedelta(days=29)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+
+        # Build query dynamically
+        rpa_notes = []
+        offset = 0
+        limit = 1000
+
+        while True:
+            # Start building the query
+            query = (
+                supabase.table("robot_process_automation_notes_records")
+                .select(
+                    "flexologist_name, location, first_timer, note_score, "
+                    "appointment_date, note_oppurtunities"
+                )
+                .eq("config_id", config_id)
+                .neq("status", "No Show")
+                .eq("flexologist_name", flexologist_name)
+                .gte("appointment_date", start_date)
+                .lt("appointment_date", end_date)
+            )
+
+            # Execute with pagination
+            data = query.range(offset, offset + limit - 1).execute().data
+            rpa_notes.extend(data)
+
+            if len(data) < limit:
+                break
+            offset += limit
+
+        # Early return if no notes
+        if not rpa_notes:
+            return (
+                jsonify(
+                    {
+                        "status": "success",
+                        "message": "No RPA notes found",
+                        "note_opportunities": [],
+                        "total_quality_notes": 0,
+                        "total_notes": 0,
+                        "total_notes_with_opportunities": 0,
+                        "location": [],
+                        "flexologist": [],
+                    }
+                ),
+                200,
+            )
+
+        # Use defaultdict for cleaner counting
+        from collections import defaultdict
+
+        locations_with_notes_count = defaultdict(int)
+        flexologist_with_notes_count = defaultdict(int)
+        locations_with_opportunity_count = defaultdict(int)
+        flexologist_with_opportunity_count = defaultdict(int)
+        flexologist_notes_percentage_obj = defaultdict(
+            lambda: {"percentage": 0, "total": 0}
+        )
+        location_notes_percentage_obj = defaultdict(
+            lambda: {"percentage": 0, "total": 0}
+        )
+
+        # Opportunity mapping for backward compatibility
+        opportunity_mapping = {
+            "Session Note: Problem Presented": "Problem Presented",
+            "Session Note: What was worked On": "Current Session Activity",
+            "Session Note: Tension Level & Frequency": "Current Session Activity",
+            "Session Note: Prescribed Action": "Next Session Focus",
+            "Session Note: Homework": "Homework",
+        }
+
+        # Define opportunities based on filter_metric
+
+        opportunities = [
+            "Confirmation Call",
+            "Grip Sock Notice",
+            "Arrive Early",
+            "Location",
+            "Prepaid",
+            "Keynote",
+            "Stated Goal",
+            "Emotional Why",
+            "Prior Solutions",
+            "Routine Captured",
+            "Physical/Medical Issue",
+            "Plan Recommendation",
+            "Problem Presented",
+            "Current Session Activity",
+            "Next Session Focus",
+            "Homework",
+        ]
+
+        opportunities_count = {opp: 0 for opp in opportunities}
+        notes_with_opportunities = []
+        total_quality_notes_percentage_array = []
+
+        # Single pass through all notes
+        for note in rpa_notes:
+            location_key = note["location"]
+            flexologist_key = note["flexologist_name"].lower()
+
+            # Count by location and flexologist
+            locations_with_notes_count[location_key] += 1
+            flexologist_with_notes_count[flexologist_key] += 1
+
+            # Calculate quality percentage
+            if note["first_timer"] == "YES":
+                max_score = 18
+            else:
+                max_score = 4
+
+            if note["note_score"] == "N/A":
+                percentage = 0
+            else:
+                percentage = (int(note["note_score"]) * 100) / max_score
+
+            total_quality_notes_percentage_array.append(percentage)
+            flexologist_notes_percentage_obj[note["flexologist_name"]][
+                "percentage"
+            ] += percentage
+            flexologist_notes_percentage_obj[note["flexologist_name"]]["total"] += 1
+            location_notes_percentage_obj[location_key]["percentage"] += percentage
+            location_notes_percentage_obj[location_key]["total"] += 1
+
+            # Process opportunities
+            note_opps = note["note_oppurtunities"]
+            has_opportunities = note_opps and note_opps not in ["N/A", "[]", "", []]
+
+            if has_opportunities:
+                notes_with_opportunities.append(note)
+                locations_with_opportunity_count[location_key] += 1
+                flexologist_with_opportunity_count[flexologist_key] += 1
+
+                # Parse and count opportunities
+                try:
+                    lowered_opps = [
+                        item.lower()
+                        for item in json.loads(note_opps)
+                        if isinstance(item, str)
+                    ]
+
+                    for opportunity in opportunities:
+                        opp_lower = opportunity.lower()
+                        # Check new opportunity name
+                        if opp_lower in lowered_opps:
+                            opportunities_count[opportunity] += 1
+                        else:
+                            # Check old opportunity names
+                            old_names = [
+                                old.lower()
+                                for old, new in opportunity_mapping.items()
+                                if new.lower() == opp_lower
+                            ]
+                            if any(old_name in lowered_opps for old_name in old_names):
+                                opportunities_count[opportunity] += 1
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+        # Calculate percentages
+        total_notes = len(rpa_notes)
+
+        # Opportunity percentages
+        for opportunity in opportunities:
+            opportunities_count[opportunity] = round(
+                (opportunities_count[opportunity] / total_notes) * 100, 2
+            )
+
+        # Location opportunity percentages
+        opportunities_count_with_location = {}
+        for location_key in locations_with_notes_count:
+            if location_key in locations_with_opportunity_count:
+                opportunities_count_with_location[location_key] = round(
+                    (
+                        locations_with_opportunity_count[location_key]
+                        / locations_with_notes_count[location_key]
+                    )
+                    * 100,
+                    2,
+                )
+            else:
+                opportunities_count_with_location[location_key] = 0
+
+        # Flexologist opportunity percentages
+        for flexologist_key in flexologist_with_notes_count:
+            if flexologist_key in flexologist_with_opportunity_count:
+                flexologist_with_opportunity_count[flexologist_key] = round(
+                    (
+                        flexologist_with_opportunity_count[flexologist_key]
+                        / flexologist_with_notes_count[flexologist_key]
+                    )
+                    * 100,
+                    2,
+                )
+            else:
+                flexologist_with_opportunity_count[flexologist_key] = 0
+
+        # Sort results
+        sorted_opportunities = sorted(
+            opportunities_count.items(), key=lambda item: item[1], reverse=True
+        )
+
+        sorted_location_notes = sorted(
+            location_notes_percentage_obj.items(),
+            key=lambda item: (
+                item[1]["percentage"] / item[1]["total"] if item[1]["total"] > 0 else 0
+            ),
+            reverse=True,
+        )
+
+        sorted_flexologist_notes = sorted(
+            flexologist_notes_percentage_obj.items(),
+            key=lambda item: (
+                item[1]["percentage"] / item[1]["total"] if item[1]["total"] > 0 else 0
+            ),
+            reverse=True,
+        )
+
+        # Calculate total quality percentage
+        total_quality_notes_percentage = (
+            sum(total_quality_notes_percentage_array)
+            / len(total_quality_notes_percentage_array)
+            if total_quality_notes_percentage_array
+            else 0
+        )
+
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "note_opportunities": [
+                        {"opportunity": opp, "percentage": pct}
+                        for opp, pct in sorted_opportunities
+                    ],
+                    "total_quality_notes": total_notes,
+                    "total_quality_notes_percentage": round(
+                        total_quality_notes_percentage
+                    ),
+                    "total_notes": total_notes,
+                    "total_notes_with_opportunities": len(notes_with_opportunities),
+                    "total_notes_with_opportunities_percentage": round(
+                        (len(notes_with_opportunities) / total_notes) * 100, 2
+                    ),
+                    "location": [
+                        {
+                            "location": loc,
+                            "percentage": (
+                                round(data["percentage"] / data["total"], 2)
+                                if data["total"] > 0
+                                else 0
+                            ),
+                        }
+                        for loc, data in sorted_location_notes
+                    ],
+                    "flexologist": [
+                        {
+                            "flexologist": flex,
+                            "percentage": (
+                                round(data["percentage"] / data["total"], 2)
+                                if data["total"] > 0
+                                else 0
+                            ),
+                        }
+                        for flex, data in sorted_flexologist_notes
+                    ],
+                }
+            ),
+            200,
+        )
+
+    except Exception as e:
+        logging.error(f"Error in GET /api/process/get_ai_information: {str(e)}")
         return jsonify({"error": "Internal server error", "status": "error"}), 500
 
 
@@ -1115,7 +1521,10 @@ def get_questions(token, booking_id):
             .execute()
         )
 
-        notestr = ". ".join(note["note"] for note in notes_resp.data if note.get("note")) + "."
+        notestr = (
+            ". ".join(note["note"] for note in notes_resp.data if note.get("note"))
+            + "."
+        )
 
         questions = scrutinize_notes(notes_resp, active)
         formatted_notes = format_notes(notestr)
@@ -1233,9 +1642,11 @@ def submit_notes_route(token):
         data = request.get_json()
         period = data["period"]
         notes = data["notes"]
-        coaching = data["coaching"]
+        coaching = data.get("coaching", None)
         client_name = data["client_name"]
         location = data["location"]
+        group_booking = data.get("group_booking", False)
+        supplementary = data.get("supplementary", None)
         client_tz = get_client_timezone()
         client_datetime = get_client_datetime()
         client_date = client_datetime.strftime("%Y-%m-%d")
@@ -1255,12 +1666,13 @@ def submit_notes_route(token):
             .select("submitted")
             .eq("period", period)
             .eq("client_name", client_name)
+            .eq("location", location)
             .eq("user_id", user_data["user_id"])
             .eq("created_at", client_date)
             .execute()
         )
 
-        if check_if_submitted_prior.data[0]["submitted"]:
+        if check_if_submitted_prior.data[0]["submitted"] and not supplementary:
             return (
                 jsonify(
                     {
@@ -1287,12 +1699,12 @@ def submit_notes_route(token):
                     username = account["username"]
                     password = account["password"]
                     break
-        
+
         # If no active account found, use main account credentials
         if not username or not password:
             username = user_details.data[0]["clubready_username"]
             password = user_details.data[0]["clubready_password"]
-    
+
         # Final check - if still no credentials, return error
         if not username or not password:
             return jsonify({"error": "No account found", "status": "error"}), 404
@@ -1312,6 +1724,8 @@ def submit_notes_route(token):
                 coaching,
                 client_date,
                 client_tz,
+                supplementary,
+                group_booking,
             ),
         )
         thread.start()
@@ -1319,7 +1733,11 @@ def submit_notes_route(token):
         return (
             jsonify(
                 {
-                    "message": "Notes submission in progress",
+                    "message": (
+                        "Supplementary note submission in progress"
+                        if supplementary
+                        else "Notes submission in progress"
+                    ),
                     "status": "success",
                     "task_id": task_id,
                 }
